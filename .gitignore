@@ -1,11 +1,25 @@
+# Environment variables
 .env
 .env.*
 !.env.example
 
+# Python
 __pycache__/
 *.py[cod]
+*.pyo
+.pytest_cache/
 .venv/
 venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Node.js
 node_modules/
 .next/
-.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
