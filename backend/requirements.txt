@@ -1,0 +1,34 @@
+# Backend framework
+fastapi
+uvicorn[standard]
+
+# Data validation and configuration
+pydantic
+pydantic-settings
+python-dotenv
+
+# Database
+sqlalchemy
+alembic
+psycopg[binary]
+
+# Authentication and authorization
+supabase
+
+# API communication
+httpx
+python-multipart
+
+# AI integration
+openai
+
+# Document processing
+PyMuPDF
+python-docx
+pandas
+
+# Testing
+pytest
+
+#code to install them 
+#python -m pip install -r backend/requirements.txt
