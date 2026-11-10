@@ -1,19 +1,23 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, EmailStr, Field
-from passlib.context import CryptContext
-from uuid import uuid4
 
-from app.api import users_store, sessions
+from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from data_engineering.storage.database import get_db
+from data_engineering.storage.models import User
+from app.core.security import (
+    hash_password,
+    verify_password,
+    create_user_session,
+    revoke_user_session,
+)
 
 
 router = APIRouter(
     prefix="/auth",
     tags=["Authentication"]
-)
-
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto"
 )
 
 
@@ -28,68 +32,72 @@ class LoginRequest(BaseModel):
     password: str
 
 
-def hash_password(password: str):
-    return pwd_context.hash(password)
+def register(data: RegisterRequest, db: Session = Depends(get_db)):
+    email = str(data.email).lower().strip()
 
+    existing_user = db.scalar(
+        select(User).where(User.email == email)
+    )
 
-def verify_password(password: str, hashed: str):
-    return pwd_context.verify(password, hashed)
-
-
-@router.post("/register")
-def register(data: RegisterRequest):
-
-    email = str(data.email).lower()
-
-    if email in users_store:
-
+    if existing_user:
         raise HTTPException(
             status_code=409,
             detail="User already exists"
         )
 
-    user_id = str(uuid4())
+    user = User(
+        name=data.name.strip(),
+        email=email,
+        password_hash=hash_password(data.password)
+    )
 
-    users_store[email] = {
-        "id": user_id,
-        "name": data.name,
-        "email": email,
-        "password": hash_password(data.password)
-    }
+    db.add(user)
+
+    try:
+        db.commit()
+        db.refresh(user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="User already exists"
+        )
 
     return {
         "message": "Registration successful",
-        "user_id": user_id
+        "user_id": user.id
     }
 
 
+@router.post("/register")
+def register_user(
+    data: RegisterRequest,
+    db: Session = Depends(get_db)
+):
+    return register(data, db)
+
+
 @router.post("/login")
-def login(data: LoginRequest):
+def login(
+    data: LoginRequest,
+    db: Session = Depends(get_db)
+):
+    email = str(data.email).lower().strip()
 
-    email = str(data.email).lower()
+    user = db.scalar(
+        select(User).where(User.email == email)
+    )
 
-    user = users_store.get(email)
-
-    if not user:
-
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password"
-        )
-
-    if not verify_password(
+    if not user or not verify_password(
         data.password,
-        user["password"]
+        user.password_hash
     ):
-
         raise HTTPException(
             status_code=401,
             detail="Invalid email or password"
         )
 
-    token = str(uuid4())
-
-    sessions[token] = user["id"]
+    token = create_user_session(db, user.id)
 
     return {
         "message": "Login successful",
@@ -99,16 +107,29 @@ def login(data: LoginRequest):
 
 
 @router.post("/logout")
-def logout(token: str):
-
-    if token not in sessions:
-
+def logout(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db)
+):
+    if not authorization:
         raise HTTPException(
             status_code=401,
-            detail="Invalid session"
+            detail="Authentication required"
         )
 
-    del sessions[token]
+    scheme, separator, token = authorization.partition(" ")
+
+    if not separator or scheme.lower() != "bearer" or not token.strip():
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authorization header"
+        )
+
+    if not revoke_user_session(db, token.strip()):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired session"
+        )
 
     return {
         "message": "Logout successful"
