@@ -13,7 +13,8 @@ class SourceRecord(BaseModel):
     source_type: Literal[
         "github",
         "document",
-        "communication"
+        "communication",
+        "synthetic"
     ]
 
     source_name: str
