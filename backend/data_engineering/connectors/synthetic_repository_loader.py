@@ -1,9 +1,11 @@
 from typing import Any
 
+from data_engineering.connectors.base_connector import BaseConnector
+
 from data_engineering.schemas.source_schema import SourceRecord
 
 
-class SyntheticRepositoryLoader:
+class SyntheticRepositoryLoader(BaseConnector):
     """
     Converts generated synthetic repository data into
     standardized HandoverOS SourceRecord objects.
@@ -33,6 +35,19 @@ class SyntheticRepositoryLoader:
         if not project_id:
             raise ValueError("Repository ID is missing.")
 
+        # Synthetic dataset identification
+        dataset_metadata = {
+            "is_synthetic": repository.get("is_synthetic", True),
+            "dataset_type": repository.get("dataset_type", "demonstration"),
+            "dataset_name": repository.get("dataset_name", "TaskFlow"),
+            "data_origin": repository.get(
+                "data_origin",
+                "HandoverOS Synthetic Data Generator"
+            )
+        }
+
+        self.dataset_metadata = dataset_metadata
+        
         records = []
 
         # Repository metadata
@@ -173,6 +188,10 @@ class SyntheticRepositoryLoader:
     ) -> SourceRecord:
         """Create a validated standardized source record."""
 
+        record_metadata = metadata.copy() if metadata else {}
+
+        record_metadata.update(self.dataset_metadata)
+
         return SourceRecord(
             project_id=project_id,
             source_type=self.source_type,
@@ -183,7 +202,7 @@ class SyntheticRepositoryLoader:
             author=author,
             created_at=created_at,
             updated_at=updated_at,
-            metadata=metadata or {}
+            metadata=record_metadata
         )
 
     @staticmethod

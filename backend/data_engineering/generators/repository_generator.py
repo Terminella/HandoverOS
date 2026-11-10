@@ -18,6 +18,14 @@ class RepositoryGenerator:
 
         return {
             "repository_id": "TASKFLOW-001",
+
+            # Synthetic dataset identification
+            "is_synthetic": True,
+            "dataset_type": "demonstration",
+            "dataset_name": "TaskFlow",
+            "data_origin": "HandoverOS Synthetic Data Generator",
+
+
             "name": "TaskFlow",
             "full_name": "TaskFlow/TaskFlow",
             "description": (
