@@ -5,35 +5,75 @@ HandoverOS is an AI-powered knowledge continuity platform that reconstructs proj
 ```text
 HandoverOS/
 │
+├── .env.example
+├── .gitignore
+├── LICENSE
+├── README.md
+│
 ├── backend/
-│   ├── main.py
-│   ├── database.py
-│   ├── models.py
-│   ├── auth.py
-│   ├── routes.py
-│   └── requirements.txt
-│
-├── ingestion/
-│   ├── github.py
-│   └── documents.py
-│
-├── ai_engine/
-│   ├── ai.py
-│   └── verification.py
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   │
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py
+│   │   │
+│   │   ├── api/
+│   │   │   ├── __init__.py
+│   │   │   ├── auth.py
+│   │   │   ├── projects.py
+│   │   │   └── users.py
+│   │   │
+│   │   └── core/
+│   │       └── config.py
+│   │
+│   └── data_engineering/
+│       ├── __init__.py
+│       ├── config.py
+│       │
+│       ├── extractors/
+│       │   ├── __init__.py
+│       │   └── document_extractor.py
+│       │
+│       ├── preprocessing/
+│       │   ├── normalizer.py
+│       │   └── validator.py
+│       │
+│       ├── schemas/
+│       │   ├── __init__.py
+│       │   └── source_schema.py
+│       │
+│       ├── services/
+│       │   └── __init__.py
+│       │
+│       ├── storage/
+│       │   └── __init__.py
+│       │
+│       └── tests/
+│           ├── __init__.py
+│           ├── test_document_extractor.py
+│           ├── test_normalizer.py
+│           ├── test_source_schema.py
+│           └── test_validator.py
 │
 ├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   ├── index.html
-│   └── package.json
+│   ├── next.config.ts
+│   ├── package.json
+│   ├── tsconfig.json
+│   │
+│   └── src/
+│       └── app/
+│           ├── layout.tsx
+│           └── page.tsx
 │
-├── tests/
-│   └── test_main.py
-│   └── data_engineering/
-├── .env
-├── .gitignore
-├── docker-compose.yml
-└── README.md
+├── docs/
+│   ├── api_documentation.md
+│   ├── architecture.md
+│   ├── data_flow.md
+│   ├── database_design.md
+│   └── user_workflow.md
+│
+└── tests/
+    ├── __init__.py
+    └── test_workflow.py
 ```
