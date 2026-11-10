@@ -86,3 +86,69 @@ def test_loader_rejects_missing_repository_metadata():
         assert False, "Expected ValueError"
     except ValueError:
         pass
+
+def test_all_records_are_identified_as_synthetic():
+    generator = RepositoryGenerator()
+    repository_data = generator.generate_base_data()
+
+    loader = SyntheticRepositoryLoader()
+    records = loader.load(repository_data)
+
+    assert len(records) == 144
+
+    assert all(
+        record.metadata.get("is_synthetic") is True
+        for record in records
+    )
+
+
+def test_all_records_are_identified_as_demonstration_data():
+    generator = RepositoryGenerator()
+    repository_data = generator.generate_base_data()
+
+    loader = SyntheticRepositoryLoader()
+    records = loader.load(repository_data)
+
+    assert all(
+        record.metadata.get("dataset_type") == "demonstration"
+        for record in records
+    )
+
+
+def test_all_records_preserve_dataset_name():
+    generator = RepositoryGenerator()
+    repository_data = generator.generate_base_data()
+
+    loader = SyntheticRepositoryLoader()
+    records = loader.load(repository_data)
+
+    assert all(
+        record.metadata.get("dataset_name") == "TaskFlow"
+        for record in records
+    )
+
+
+def test_synthetic_metadata_does_not_overwrite_original_metadata():
+    generator = RepositoryGenerator()
+    repository_data = generator.generate_base_data()
+
+    loader = SyntheticRepositoryLoader()
+    records = loader.load(repository_data)
+
+    repository_record = next(
+        record for record in records
+        if record.source_name == "Synthetic Repository"
+    )
+
+    commit_record = next(
+        record for record in records
+        if record.source_name == "Synthetic Commit"
+    )
+
+    assert repository_record.metadata["repository_id"] == "TASKFLOW-001"
+    assert repository_record.metadata["name"] == "TaskFlow"
+
+    assert "commit_id" in commit_record.metadata
+    assert "message" in commit_record.metadata
+
+    assert commit_record.metadata["is_synthetic"] is True
