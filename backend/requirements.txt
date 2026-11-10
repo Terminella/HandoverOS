@@ -3,9 +3,11 @@ fastapi
 uvicorn[standard]
 
 # Data validation and configuration
+
 pydantic
 pydantic-settings
 python-dotenv
+email-validator
 
 # Database
 sqlalchemy
