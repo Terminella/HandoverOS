@@ -1,0 +1,23 @@
+
+[
+  {
+    "project_id": "project-demo-001",
+    "source_id": "source-meeting-001",
+    "source_type": "communication",
+    "source_name": "Sprint Meeting Notes",
+    "title": "Sprint Planning",
+    "content": "The team decided to use FastAPI for the backend.\nThe authentication module is completed.\nThe team will implement project reporting next.\nThere is a risk of delayed deployment.",
+    "author": "Project Lead",
+    "metadata": {}
+  },
+  {
+    "project_id": "project-demo-001",
+    "source_id": "source-status-002",
+    "source_type": "document",
+    "source_name": "Project Status Report",
+    "title": "Development Status",
+    "content": "The authentication module is not completed.\nThe reporting module depends on authentication.\nThe deployment is currently blocked.",
+    "author": "Developer",
+    "metadata": {}
+  }
+]
