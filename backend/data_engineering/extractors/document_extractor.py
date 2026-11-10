@@ -1,3 +1,4 @@
+import csv
 from pathlib import Path
 
 import pymupdf
@@ -6,7 +7,7 @@ from docx import Document
 
 class DocumentExtractor:
 
-    SUPPORTED_FORMATS = {".pdf", ".docx", ".txt"}
+    SUPPORTED_FORMATS = {".pdf", ".docx", ".txt", ".csv"}
 
     def extract(self, file_path: str) -> dict:
         """
@@ -40,8 +41,11 @@ class DocumentExtractor:
         elif extension == ".docx":
             content = self._extract_docx(path)
 
-        else:
+        elif extension == ".txt":
             content = self._extract_txt(path)
+
+        else:
+            content = self._extract_csv(path)
 
         return {
             "source_name": path.name,
@@ -84,3 +88,58 @@ class DocumentExtractor:
         """Extract text from a plain text file."""
 
         return path.read_text(encoding="utf-8-sig")
+
+    def _extract_csv(self, path: Path) -> str:
+        """
+        Extract CSV data while preserving column names
+        and relationships between values.
+        """
+
+        rows = []
+
+        try:
+            with path.open(
+                "r",
+                encoding="utf-8-sig",
+                newline=""
+            ) as csv_file:
+
+                reader = csv.DictReader(csv_file)
+
+                if not reader.fieldnames:
+                    raise ValueError("CSV file is empty or has no headers.")
+
+                headers = reader.fieldnames
+
+                if any(not header.strip() for header in headers):
+                    raise ValueError("CSV contains an empty column name.")
+
+                if len(headers) != len(set(headers)):
+                    raise ValueError("CSV contains duplicate column names.")
+
+                for row_number, row in enumerate(reader, start=1):
+
+                    if None in row:
+                        raise ValueError(
+                            f"CSV row {row_number} contains extra values."
+                        )
+
+                    if any(value is None for value in row.values()):
+                        raise ValueError(
+                            f"CSV row {row_number} has missing columns."
+                        )
+
+                    row_content = [
+                        f"{column}: {value}"
+                        for column, value in row.items()
+                    ]
+
+                    rows.append(
+                        f"Row {row_number}:\n"
+                        + "\n".join(row_content)
+                    )
+
+        except csv.Error as error:
+            raise ValueError(f"Unable to parse CSV file: {error}") from error
+
+        return "\n\n".join(rows)
