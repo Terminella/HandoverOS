@@ -11,7 +11,10 @@ from data_engineering.storage import models  # noqa: F401
 
 config = context.config
 
-if config.config_file_name is not None:
+if (
+    config.config_file_name is not None
+    and config.file_config.has_section("loggers")
+):
     fileConfig(config.config_file_name)
 
 # Use the application's database URL.
