@@ -1,8 +1,12 @@
-from fastapi import APIRouter, HTTPException, Header
-from pydantic import BaseModel, Field
-from uuid import uuid4
 
-from app.api import projects_store, sessions
+from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from data_engineering.storage.database import get_db
+from data_engineering.storage.models import Project, ProjectMember
+from app.core.security import get_user_id_from_token
 
 
 router = APIRouter(
@@ -12,29 +16,32 @@ router = APIRouter(
 
 
 class ProjectCreate(BaseModel):
-
     name: str = Field(min_length=2, max_length=180)
-
     description: str = ""
 
 
-def get_user_id(authorization: str | None):
+def get_user_id(
+    authorization: str | None,
+    db: Session
+) -> str:
 
     if not authorization:
-
         raise HTTPException(
             status_code=401,
             detail="Authentication required"
         )
 
-    token = authorization.replace(
-        "Bearer ", "", 1
-    )
+    scheme, separator, token = authorization.partition(" ")
 
-    user_id = sessions.get(token)
+    if not separator or scheme.lower() != "bearer" or not token.strip():
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authorization header"
+        )
+
+    user_id = get_user_id_from_token(db, token.strip())
 
     if not user_id:
-
         raise HTTPException(
             status_code=401,
             detail="Invalid or expired session"
@@ -43,145 +50,165 @@ def get_user_id(authorization: str | None):
     return user_id
 
 
+def serialize_project(project: Project) -> dict:
+    return {
+        "id": project.id,
+        "name": project.name,
+        "description": project.description,
+        "owner_id": project.owner_id,
+        "members": [member.user_id for member in project.members],
+        "status": project.status
+    }
+
+
 @router.post("/", status_code=201)
 def create_project(
     data: ProjectCreate,
-    authorization: str | None = Header(default=None)
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db)
 ):
 
-    user_id = get_user_id(authorization)
+    user_id = get_user_id(authorization, db)
 
-    project_id = str(uuid4())
+    project = Project(
+        name=data.name.strip(),
+        description=data.description,
+        owner_id=user_id
+    )
 
-    project = {
+    db.add(project)
+    db.flush()
 
-        "id": project_id,
+    membership = ProjectMember(
+        project_id=project.id,
+        user_id=user_id,
+        role="owner"
+    )
 
-        "name": data.name,
-
-        "description": data.description,
-
-        "owner_id": user_id,
-
-        "members": [user_id],
-
-        "status": "active"
-
-    }
-
-    projects_store[project_id] = project
+    db.add(membership)
+    db.commit()
+    db.refresh(project)
 
     return {
         "message": "Project created successfully",
-        "project": project
+        "project": serialize_project(project)
     }
 
 
 @router.get("/")
 def get_projects(
-    authorization: str | None = Header(default=None)
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db)
 ):
 
-    user_id = get_user_id(authorization)
+    user_id = get_user_id(authorization, db)
+
+    projects = db.scalars(
+        select(Project)
+        .join(ProjectMember)
+        .where(ProjectMember.user_id == user_id)
+    ).unique().all()
 
     return [
-
-        project
-
-        for project in projects_store.values()
-
-        if user_id in project["members"]
-
+        serialize_project(project)
+        for project in projects
     ]
 
 
 @router.get("/{project_id}")
 def get_project(
     project_id: str,
-    authorization: str | None = Header(default=None)
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db)
 ):
 
-    user_id = get_user_id(authorization)
+    user_id = get_user_id(authorization, db)
 
-    project = projects_store.get(project_id)
+    project = db.get(Project, project_id)
 
     if not project:
-
         raise HTTPException(
             status_code=404,
             detail="Project not found"
         )
 
-    if user_id not in project["members"]:
+    membership = db.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == user_id
+        )
+    )
 
+    if not membership:
         raise HTTPException(
             status_code=403,
             detail="Access denied"
         )
 
-    return project
+    return serialize_project(project)
 
 
 @router.put("/{project_id}")
 def update_project(
     project_id: str,
     data: ProjectCreate,
-    authorization: str | None = Header(default=None)
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db)
 ):
 
-    user_id = get_user_id(authorization)
+    user_id = get_user_id(authorization, db)
 
-    project = projects_store.get(project_id)
+    project = db.get(Project, project_id)
 
     if not project:
-
         raise HTTPException(
             status_code=404,
             detail="Project not found"
         )
 
-    if project["owner_id"] != user_id:
-
+    if project.owner_id != user_id:
         raise HTTPException(
             status_code=403,
             detail="Only project owner can update"
         )
 
-    project["name"] = data.name
+    project.name = data.name.strip()
+    project.description = data.description
 
-    project["description"] = data.description
+    db.commit()
+    db.refresh(project)
 
     return {
         "message": "Project updated successfully",
-        "project": project
+        "project": serialize_project(project)
     }
 
 
 @router.delete("/{project_id}")
 def delete_project(
     project_id: str,
-    authorization: str | None = Header(default=None)
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db)
 ):
 
-    user_id = get_user_id(authorization)
+    user_id = get_user_id(authorization, db)
 
-    project = projects_store.get(project_id)
+    project = db.get(Project, project_id)
 
     if not project:
-
         raise HTTPException(
             status_code=404,
             detail="Project not found"
         )
 
-    if project["owner_id"] != user_id:
-
+    if project.owner_id != user_id:
         raise HTTPException(
             status_code=403,
             detail="Only project owner can delete"
         )
 
-    del projects_store[project_id]
+    db.delete(project)
+    db.commit()
 
     return {
         "message": "Project deleted successfully"
