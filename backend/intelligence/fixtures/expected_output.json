@@ -1,0 +1,15 @@
+
+{
+  "project_id": "project-demo-001",
+  "expected_categories": [
+    "decision",
+    "project_state",
+    "task",
+    "risk",
+    "dependency",
+    "blocker"
+  ],
+  "expected_minimum_verified_claims": 6,
+  "expected_minimum_contradictions": 1,
+  "requires_human_review": true
+}
