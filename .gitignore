@@ -20,6 +20,10 @@ env/
 node_modules/
 .next/
 
+.kilo/
+
+*.tsbuildinfo
+
 # OS
 .DS_Store
 Thumbs.db
