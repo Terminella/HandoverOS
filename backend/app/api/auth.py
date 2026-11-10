@@ -7,11 +7,13 @@ from sqlalchemy.orm import Session
 
 from data_engineering.storage.database import get_db
 from data_engineering.storage.models import User
+from app.core.audit import record_audit
 from app.core.security import (
     hash_password,
     verify_password,
     create_user_session,
     revoke_user_session,
+    get_user_id_from_token,
 )
 
 
@@ -32,7 +34,7 @@ class LoginRequest(BaseModel):
     password: str
 
 
-def register(data: RegisterRequest, db: Session = Depends(get_db)):
+def register(data: RegisterRequest, db: Session):
     email = str(data.email).lower().strip()
 
     existing_user = db.scalar(
@@ -54,8 +56,20 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
 
     try:
+        db.flush()
+
+        record_audit(
+            db=db,
+            action="user.register",
+            resource_type="user",
+            user_id=user.id,
+            resource_id=user.id,
+            details={"email": user.email}
+        )
+
         db.commit()
         db.refresh(user)
+
     except IntegrityError:
         db.rollback()
         raise HTTPException(
@@ -99,6 +113,15 @@ def login(
 
     token = create_user_session(db, user.id)
 
+    record_audit(
+        db=db,
+        action="user.login",
+        resource_type="user",
+        user_id=user.id,
+        resource_id=user.id
+    )
+    db.commit()
+
     return {
         "message": "Login successful",
         "access_token": token,
@@ -125,11 +148,29 @@ def logout(
             detail="Invalid authorization header"
         )
 
-    if not revoke_user_session(db, token.strip()):
+    token = token.strip()
+    user_id = get_user_id_from_token(db, token)
+
+    if not user_id:
         raise HTTPException(
             status_code=401,
             detail="Invalid or expired session"
         )
+
+    if not revoke_user_session(db, token):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired session"
+        )
+
+    record_audit(
+        db=db,
+        action="user.logout",
+        resource_type="user",
+        user_id=user_id,
+        resource_id=user_id
+    )
+    db.commit()
 
     return {
         "message": "Logout successful"
