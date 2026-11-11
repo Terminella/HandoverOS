@@ -126,6 +126,24 @@ class SourceRecordRepository:
             .all()
         )
 
+    def get_by_ids(
+        self,
+        project_id: str,
+        record_ids: list[int]
+    ) -> list[SourceRecordModel]:
+
+        if not record_ids:
+            return []
+
+        return (
+            self.db.query(SourceRecordModel)
+            .filter(
+                SourceRecordModel.project_id == project_id,
+                SourceRecordModel.id.in_(record_ids)
+            )
+            .all()
+        )    
+
     def get_all(self):
         return self.db.query(SourceRecordModel).all()
 
