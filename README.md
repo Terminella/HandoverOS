@@ -565,80 +565,183 @@ A quick map of where things live:
 | 📁 `docs/` | Architecture, data flow, database, API and workflow documents |
 | 📁 `tests/` | Workflow-level tests |
 
+## HandoverOS — Project Architecture
 ```text
 HandoverOS/
 │
-├── .env.example
-├── .gitignore
-├── LICENSE
-├── README.md
-│
 ├── backend/
-│   ├── Dockerfile
-│   ├── requirements.txt
 │   │
-│   ├── app/                                  # Backend application
+│   ├── app/
 │   │   ├── __init__.py
 │   │   ├── main.py
 │   │   │
-│   │   ├── api/                              # API route modules
+│   │   ├── api/
 │   │   │   ├── __init__.py
 │   │   │   ├── auth.py
 │   │   │   ├── projects.py
 │   │   │   └── users.py
 │   │   │
 │   │   └── core/
-│   │       └── config.py
+│   │       ├── audit.py
+│   │       ├── config.py
+│   │       └── security.py
 │   │
-│   └── data_engineering/                     # Ingestion and preprocessing
-│       ├── __init__.py
-│       ├── config.py
-│       │
-│       ├── extractors/
-│       │   ├── __init__.py
-│       │   └── document_extractor.py
-│       │
-│       ├── preprocessing/
-│       │   ├── normalizer.py
-│       │   └── validator.py
-│       │
-│       ├── schemas/
-│       │   ├── __init__.py
-│       │   └── source_schema.py
-│       │
-│       ├── services/                         # Scaffold
-│       │   └── __init__.py
-│       │
-│       ├── storage/                          # Scaffold
-│       │   └── __init__.py
-│       │
-│       └── tests/                            # pytest suite
-│           ├── __init__.py
-│           ├── test_document_extractor.py
-│           ├── test_normalizer.py
-│           ├── test_source_schema.py
-│           └── test_validator.py
+│   ├── alembic/
+│   │   ├── env.py
+│   │   ├── README
+│   │   ├── script.py.mako
+│   │   └── versions/
+│   │
+│   ├── data_engineering/
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   ├── ingestion_pipeline.py
+│   │   ├── README.md
+│   │   │
+│   │   ├── connectors/
+│   │   │   ├── __init__.py
+│   │   │   ├── base_connector.py
+│   │   │   ├── document_connector.py
+│   │   │   └── synthetic_repository_loader.py
+│   │   │
+│   │   ├── extractors/
+│   │   │   ├── __init__.py
+│   │   │   └── document_extractor.py
+│   │   │
+│   │   ├── generators/
+│   │   │   ├── __init__.py
+│   │   │   └── repository_generator.py
+│   │   │
+│   │   ├── preprocessing/
+│   │   │   ├── normalizer.py
+│   │   │   └── validator.py
+│   │   │
+│   │   ├── schemas/
+│   │   │   ├── __init__.py
+│   │   │   ├── knowledge_schema.py
+│   │   │   └── source_schema.py
+│   │   │
+│   │   ├── services/
+│   │   │   ├── __init__.py
+│   │   │   ├── evidence_service.py
+│   │   │   ├── knowledge_storage_service.py
+│   │   │   ├── knowledge_validation_service.py
+│   │   │   ├── retrieval_service.py
+│   │   │   └── storage_service.py
+│   │   │
+│   │   ├── storage/
+│   │   │   ├── __init__.py
+│   │   │   ├── database.py
+│   │   │   ├── init_db.py
+│   │   │   ├── models.py
+│   │   │   └── repository.py
+│   │   │
+│   │   └── tests/
+│   │       ├── __init__.py
+│   │       ├── test_document_connector.py
+│   │       ├── test_document_extractor.py
+│   │       ├── test_evidence_service.py
+│   │       ├── test_ingestion_pipeline.py
+│   │       ├── test_knowledge_schema.py
+│   │       ├── test_knowledge_storage_service.py
+│   │       ├── test_normalizer.py
+│   │       ├── test_retrieval_service.py
+│   │       ├── test_source_schema.py
+│   │       ├── test_storage_repository.py
+│   │       ├── test_synthetic_repository_loader.py
+│   │       └── test_validator.py
+│   │
+│   ├── intelligence/
+│   │   ├── __init__.py
+│   │   ├── adapters.py
+│   │   ├── config.py
+│   │   ├── pipeline.py
+│   │   ├── schemas.py
+│   │   │
+│   │   ├── extraction/
+│   │   │   ├── extractor.py
+│   │   │   └── prompts.py
+│   │   │
+│   │   ├── fixtures/
+│   │   │   ├── expected_output.json
+│   │   │   └── sample_sources.json
+│   │   │
+│   │   ├── generation/
+│   │   │   └── handover.py
+│   │   │
+│   │   ├── llm/
+│   │   │   ├── client.py
+│   │   │   ├── factory.py
+│   │   │   └── ollama_client.py
+│   │   │
+│   │   ├── tests/
+│   │   │   └── test_pipeline.py
+│   │   │
+│   │   └── verification/
+│   │       ├── contradictions.py
+│   │       └── evidence.py
+│   │
+│   ├── Dockerfile
+│   └── requirements.txt
 │
 ├── frontend/
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── [section]/
+│   │   │   ├── globals.css
+│   │   │   ├── layout.tsx
+│   │   │   └── page.tsx
+│   │   │
+│   │   ├── components/
+│   │   │   ├── dashboard/
+│   │   │   │   ├── EvidencePanel.tsx
+│   │   │   │   ├── IntelligenceSummary.tsx
+│   │   │   │   ├── PipelineCard.tsx
+│   │   │   │   ├── ReadinessCard.tsx
+│   │   │   │   └── StatTiles.tsx
+│   │   │   │
+│   │   │   ├── layout/
+│   │   │   │   ├── MobileNav.tsx
+│   │   │   │   ├── Sidebar.tsx
+│   │   │   │   ├── ThemeToggle.tsx
+│   │   │   │   └── Topbar.tsx
+│   │   │   │
+│   │   │   └── ui/
+│   │   │       └── StatusChip.tsx
+│   │   │
+│   │   ├── lib/
+│   │   │   ├── labels.ts
+│   │   │   ├── metrics.ts
+│   │   │   ├── mock-data.ts
+│   │   │   ├── nav.ts
+│   │   │   ├── stages.ts
+│   │   │   └── types.ts
+│   │   │
+│   │   └── next-env.d.ts
+│   │
 │   ├── next.config.ts
 │   ├── package.json
-│   ├── tsconfig.json
-│   │
-│   └── src/
-│       └── app/                              # Next.js App Router
-│           ├── layout.tsx
-│           └── page.tsx
+│   ├── package-lock.json
+│   └── tsconfig.json
 │
 ├── docs/
 │   ├── api_documentation.md
 │   ├── architecture.md
+│   ├── data_engineering.md
 │   ├── data_flow.md
 │   ├── database_design.md
+│   ├── limitations_and_future_scope.md
+│   ├── testing_strategy.md
 │   └── user_workflow.md
 │
-└── tests/
-    ├── __init__.py
-    └── test_workflow.py
+├── tests/
+│   ├── __init__.py
+│   └── test_workflow.py
+│
+├── .gitignore
+├── docker-compose.yml
+├── LICENSE
+└── README.md
 ```
 
 ## ⚠️ Limitations and Responsible Use
@@ -704,9 +807,3 @@ All members participate in system integration, documentation and final testing.
 ## 📄 License
 
 This project is licensed under the terms of the [LICENSE](LICENSE) file in this repository.
-
-<div align="center">
-
-<sub>When a person leaves a project, the knowledge required to continue it should remain.</sub>
-
-</div>
