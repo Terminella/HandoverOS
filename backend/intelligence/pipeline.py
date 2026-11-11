@@ -8,10 +8,8 @@ from intelligence.schemas import (
     IntelligencePipelineResult,
     VerificationResult,
 )
-from intelligence.llm.client import (
-    LLMClient,
-    FakeLLMClient,
-)
+from intelligence.llm.client import LLMClient
+from intelligence.llm.factory import create_llm_client
 from intelligence.extraction.extractor import KnowledgeExtractor
 from intelligence.verification.evidence import EvidenceVerifier
 from intelligence.verification.contradictions import (
@@ -32,13 +30,7 @@ class IntelligencePipeline:
         self.settings = settings
 
         if client is None:
-            if settings.provider != "mock":
-                raise NotImplementedError(
-                    f"Provider '{settings.provider}' has not been "
-                    "implemented yet. Use FakeLLMClient for now."
-                )
-
-            client = FakeLLMClient()
+            client = create_llm_client(settings)
 
         self.extractor = KnowledgeExtractor(
             client=client,
