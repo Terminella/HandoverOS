@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { apiPost, getStoredToken } from "../../../lib/api";
 
+const PROJECT_STORAGE_KEY = "handoveros-selected-project";
+
 export default function ReconstructPage() {
-  const router = useRouter();
   const [projectId, setProjectId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -17,6 +17,28 @@ export default function ReconstructPage() {
     knowledge_items_created: number;
     message: string;
   } | null>(null);
+
+  useEffect(() => {
+    const syncProject = () => {
+      setProjectId(localStorage.getItem(PROJECT_STORAGE_KEY) || "");
+    };
+
+    const handleProjectChange = (event: Event) => {
+      const { projectId: nextProjectId } = (
+        event as CustomEvent<{ projectId?: string }>
+      ).detail ?? {};
+      setProjectId(nextProjectId || "");
+    };
+
+    syncProject();
+    window.addEventListener("handoveros-project-change", handleProjectChange);
+    window.addEventListener("storage", syncProject);
+
+    return () => {
+      window.removeEventListener("handoveros-project-change", handleProjectChange);
+      window.removeEventListener("storage", syncProject);
+    };
+  }, []);
 
   const token = getStoredToken() ?? undefined;
 
@@ -83,19 +105,14 @@ export default function ReconstructPage() {
       )}
 
       <form className="auth-form" onSubmit={handleSubmit}>
-        <label>
-          Project ID
-          <input
-            type="text"
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            placeholder="Enter project ID"
-            required
-          />
-          <p className="muted">Reconstruction requires at least one ingested source for this project.</p>
-        </label>
+        <p className="muted">
+          {projectId
+            ? `Using the selected Topbar project (ID: ${projectId}).`
+            : "Select a project in the Topbar to run reconstruction."}
+        </p>
+        <p className="muted">Reconstruction requires at least one ingested source for this project.</p>
 
-        <button type="submit" className="auth-button" disabled={loading || !projectId}>
+        <button type="submit" className="auth-button" disabled={loading || !projectId.trim()}>
           {loading ? "Reconstructing..." : "Run reconstruction"}
         </button>
       </form>
