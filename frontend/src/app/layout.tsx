@@ -1,10 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import MobileNav from "../components/layout/MobileNav";
-import Sidebar from "../components/layout/Sidebar";
-import Topbar from "../components/layout/Topbar";
-import { projects, user } from "../lib/mock-data";
-import "./globals.css";
+import AuthShell from "./auth-shell";
 
 export const metadata: Metadata = {
   title: "HandoverOS",
@@ -13,24 +9,19 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
 
-// Runs before first paint so the saved (or system) theme is applied without a flash.
 const themeInit = `try{var t=localStorage.getItem("handoveros-theme");if(!t){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.dataset.theme=t}catch(e){}`;
+
+const authInit = `(()=>{const p=window.location.pathname;const t=localStorage.getItem("handoveros-token");if(p==="/login"&&t){window.location.replace("/");}else if(p!=="/login"&&p!=="/register"&&!t){window.location.replace("/login");}})();`;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
+        <script dangerouslySetInnerHTML={{ __html: authInit }} />
       </head>
       <body>
-        <div className="shell">
-          <Sidebar />
-          <div className="main">
-            <Topbar projects={projects} user={user} />
-            <main className="content">{children}</main>
-          </div>
-        </div>
-        <MobileNav />
+        <AuthShell>{children}</AuthShell>
       </body>
     </html>
   );
