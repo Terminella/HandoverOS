@@ -110,6 +110,27 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  useEffect(() => {
+  const syncSelectedProject = () => {
+    const storedProjectId = localStorage.getItem("handoveros-selected-project");
+    setSelectedProjectId(storedProjectId || null);
+  };
+
+  const handleProjectChange = (event: Event) => {
+    const customEvent = event as CustomEvent<{ projectId: string }>;
+    setSelectedProjectId(customEvent.detail.projectId);
+  };
+
+  syncSelectedProject();
+
+  window.addEventListener("handoveros-project-change", handleProjectChange);
+  window.addEventListener("storage", syncSelectedProject);
+
+  return () => {
+    window.removeEventListener("handoveros-project-change", handleProjectChange);
+    window.removeEventListener("storage", syncSelectedProject);
+  };
+}, []);
 
   const config = section ? SECTIONS[section] : undefined;
 

@@ -26,10 +26,15 @@ export default function Topbar({ projects, user }: { projects: Project[]; user: 
   }, [projects]);
 
   function handleProjectChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const id = e.target.value;
-    setSelectedProjectId(id);
-    localStorage.setItem(PROJECT_STORAGE_KEY, id);
-  }
+  const id = e.target.value;
+  setSelectedProjectId(id);
+  localStorage.setItem(PROJECT_STORAGE_KEY, id);
+  window.dispatchEvent(
+    new CustomEvent("handoveros-project-change", {
+      detail: { projectId: id },
+    })
+  );
+}
 
   function handleLogout() {
     clearToken();
