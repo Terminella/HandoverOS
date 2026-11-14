@@ -152,64 +152,79 @@ Initial MVP priority is **GitHub repositories** and **document uploads**. The pr
 
 ## 🏗️ Architecture
 
-HandoverOS follows a modular, API-driven three-tier structure: a Next.js presentation layer, a Python application and intelligence layer, and a persistence layer.
+HandoverOS follows a modular, API-driven three-tier structure: a Next.js presentation layer, a Python backend with API, data engineering, and intelligence layers, and a persistence layer with SQLAlchemy/Alembic migrations.
 
 ```mermaid
 flowchart TB
     subgraph UI["Presentation Layer · Next.js + TypeScript"]
-        DASH["Dashboard"]
-        PROJ["Project Interfaces"]
-        FIND["AI Findings"]
-        EVID["Evidence Inspector"]
-        REV["Handover Review"]
+        DASH["Dashboard (/)"]
+        LOGIN["Login (/login)"]
+        REG["Register (/register)"]
+        SETT["Settings (/settings)"]
+        PROJ["Projects (/projects/create)"]
+        SRC["Sources (/sources/upload)"]
+        INT["Intelligence (/intelligence/reconstruct)"]
+        HAND["Handovers (/handovers/create)"]
+        SEC["Section (/[section])"]
     end
 
     subgraph API["Application Layer · Python backend"]
-        AUTH["auth"]
-        PRJ["projects"]
-        USR["users"]
-        CORE["core/config"]
+        AUTH["auth.py"]
+        HAN["handovers.py"]
+        KNO["knowledge.py"]
+        PRJ["projects.py"]
+        SRC["sources.py"]
+        SYS["system.py"]
+        USR["users.py"]
+        CORE["core/config.py, security.py, audit.py"]
     end
 
     subgraph DE["Data Engineering"]
-        EXT["Extractors"]
-        PRE["Normalizer + Validator"]
-        SCH["Source Schema"]
-        SVC["Services (scaffold)"]
-        STO["Storage (scaffold)"]
+        CONN["connectors/"]
+        EXT["extractors/"]
+        GEN["generators/"]
+        PRE["preprocessing/"]
+        SCH["schemas/"]
+        SVC["services/"]
+        STO["storage/"]
     end
 
-    subgraph AI["AI / LLM Intelligence (planned)"]
-        KE["Knowledge Extraction"]
-        ET["Evidence Tracing"]
-        CD["Contradiction and Uncertainty Detection"]
-        HG["Handover Generation"]
+    subgraph AI["AI / LLM Intelligence"]
+        PIPE["pipeline.py"]
+        EXT["extraction/"]
+        GEN["generation/"]
+        LLM["llm/"]
+        VER["verification/"]
     end
 
-    DB[("Database · PostgreSQL planned")]
-    LLM["LLM Provider (planned)"]
+    DB[("Database · SQLAlchemy + Alembic")]
+    MIG["alembic/versions/"]
 
     UI -->|HTTP| API
     API --> CORE
     API --> DE
-    EXT --> PRE --> SCH
+    API --> AI
+    CONN --> EXT --> PRE --> SCH
     DE --> STO
     STO --> DB
     API --> DB
-    DE -.-> AI
-    AI -.-> API
-    AI -.-> LLM
+    MIG --> DB
+    AI --> API
 ```
 
-Solid lines reflect the current repository layout; dotted lines are planned integration.
+Solid lines reflect the current repository layout.
 
 <details>
 <summary><strong>📌 Architecture notes</strong></summary>
 
-- The frontend is a Next.js (TypeScript, App Router) application under `frontend/`.
-- The backend exposes route modules for authentication, projects and users under `backend/app/api/`.
-- Data engineering lives in a separate package, `backend/data_engineering/`, with its own configuration and tests.
-- There is no AI/LLM module in the repository yet; the AI layer described here is the planned design from the Round 1 proposal.
+- The frontend is a Next.js (TypeScript, App Router) application under `frontend/src/app/`. Routes: `/` (dashboard), `/login`, `/register`, `/settings`, `/projects/create`, `/sources/upload`, `/intelligence/reconstruct`, `/handovers/create`, and `/[section]`.
+- Key frontend lib modules: `frontend/src/lib/api.ts`, `auth.ts`, `labels.ts`, `types.ts` (plus `metrics.ts`, `mock-data.ts`, `nav.ts`, `require-auth.ts`, `stages.ts`).
+- Frontend components live under `frontend/src/components/` (`dashboard/`, `layout/`, `ui/`).
+- The backend entry point is `backend/app/main.py`. API route modules under `backend/app/api/`: `auth.py`, `handovers.py`, `knowledge.py`, `projects.py`, `sources.py`, `system.py`, `users.py`. Core modules: `config.py`, `security.py`, `audit.py`.
+- Database migrations are managed with Alembic under `backend/alembic/versions/`.
+- Data engineering lives in `backend/data_engineering/` with connectors, extractors, generators, preprocessing, schemas, services, storage, and tests.
+- AI/LLM intelligence lives in `backend/intelligence/` with pipeline, extraction, generation, llm, verification, schemas, adapters, config, fixtures, and tests.
+- Root-level tests live in `tests/`.
 - Read exact persistence behaviour and runtime settings from `backend/app/core/config.py`, `backend/data_engineering/config.py` and `.env.example` before deployment.
 - See [`docs/architecture.md`](docs/architecture.md) and [`docs/data_flow.md`](docs/data_flow.md) for the detailed design.
 
@@ -269,52 +284,64 @@ The stack below combines what is **confirmed by the repository layout** and what
 ## ⚡ Backend Architecture
 
 - **Entry point:** `backend/app/main.py`
-- **Routers:** `backend/app/api/auth.py`, `projects.py`, `users.py`
-- **Configuration:** `backend/app/core/config.py`, driven by environment variables
+- **API route modules:** `backend/app/api/auth.py`, `handovers.py`, `knowledge.py`, `projects.py`, `sources.py`, `system.py`, `users.py`
+- **Core modules:** `backend/app/core/config.py`, `security.py`, `audit.py`
+- **Database migrations:** `backend/alembic/versions/` (Alembic)
 - **Packaging:** `backend/Dockerfile`, dependencies in `backend/requirements.txt`
+- **Root-level tests:** `tests/`
+
+Backend API routes and modules:
+
+| Module | Responsibility |
+|---|---|
+| `auth.py` | Authentication (register, login, logout) |
+| `handovers.py` | Handover creation and retrieval |
+| `knowledge.py` | Knowledge item management |
+| `projects.py` | Project CRUD and membership |
+| `sources.py` | Source ingestion and retrieval |
+| `system.py` | System health and status |
+| `users.py` | User profile and listing |
+| `core/config.py` | Application configuration |
+| `core/security.py` | Security utilities |
+| `core/audit.py` | Audit logging |
 
 Planned backend modules (from the Round 1 proposal): API and application services · authentication and authorisation · data ingestion and integration · normalisation and validation · AI knowledge extraction · structured knowledge representation · evidence mapping and verification · handover generation · persistence · audit and approval management.
 
-<!-- VERIFY: how routers are registered in main.py, the auth mechanism, and which routes are implemented versus stubbed. -->
-
 ## 🧱 Data Engineering Pipeline
 
-Located in `backend/data_engineering/`, structured as an independent Python package with its own tests.
+Located in `backend/data_engineering/`, structured as an independent Python package with its own configuration and tests.
 
-```mermaid
-flowchart LR
-    S["Source document"] --> E["extractors/<br/>document_extractor.py"]
-    E --> N["preprocessing/<br/>normalizer.py"]
-    N --> V["preprocessing/<br/>validator.py"]
-    V --> SC["schemas/<br/>source_schema.py"]
-    SC --> ST["storage/ (scaffold)"]
-    ST --> AI["AI extraction (planned)"]
-```
-
-| Component | Responsibility | Status |
+| Component | Path | Responsibility |
 |---|---|---|
-| `extractors/document_extractor.py` | Extract content from documents | 🟡 Present, has tests |
-| `preprocessing/normalizer.py` | Normalise extracted content | 🟡 Present, has tests |
-| `preprocessing/validator.py` | Validate content before use | 🟡 Present, has tests |
-| `schemas/source_schema.py` | Define the shape of an ingested source | 🟡 Present, has tests |
-| `services/` | Pipeline orchestration | 🧭 Empty package |
-| `storage/` | Persistence of processed data | 🧭 Empty package |
-| `config.py` | Pipeline configuration | 🟡 Present |
+| Configuration | `config.py` | Pipeline configuration |
+| Ingestion pipeline | `ingestion_pipeline.py` | End-to-end ingestion orchestration |
+| Connectors | `connectors/base_connector.py`, `document_connector.py`, `synthetic_repository_loader.py` | Source connectors |
+| Extractors | `extractors/document_extractor.py` | Content extraction from documents |
+| Generators | `generators/repository_generator.py` | Synthetic repository data generation |
+| Preprocessing | `preprocessing/normalizer.py`, `validator.py` | Normalisation and validation |
+| Schemas | `schemas/knowledge_schema.py`, `source_schema.py` | Source and knowledge schemas |
+| Services | `services/evidence_service.py`, `knowledge_storage_service.py`, `knowledge_validation_service.py`, `retrieval_service.py`, `storage_service.py` | Business logic services |
+| Storage | `storage/database.py`, `init_db.py`, `knowledge_repository.py`, `models.py`, `repository.py` | Persistence layer |
+| Tests | `tests/` | 12 unit test modules |
 
-Design goals from the proposal: preserve **source identifiers, timestamps and original references** end to end so that evidence linking remains possible downstream. See [`docs/data_flow.md`](docs/data_flow.md).
+Design goals: preserve **source identifiers, timestamps and original references** end to end so that evidence linking remains possible downstream. See [`docs/data_flow.md`](docs/data_flow.md).
 
 ## 🤖 AI/LLM Knowledge Intelligence Architecture
 
-> **Status: 🧭 Planned.** The repository contains no LLM integration code yet. This section describes the intended design.
+Located in `backend/intelligence/`, an implemented Python package for LLM-based knowledge extraction and verification.
 
-| Responsibility | Description |
-|---|---|
-| LLM integration | Provider client with structured-output extraction pipelines |
-| Structured knowledge extraction | Decisions, responsibilities, blockers, risks, next steps as typed records |
-| Decision, task, risk and blocker identification | Classified, deduplicated knowledge items |
-| Evidence tracing | Every finding links to the source passage that supports it |
-| Contradiction and uncertainty detection | Conflicts and low-confidence items flagged for review |
-| Handover generation | Evidence-backed report assembled from verified items |
+| Module | Path | Responsibility |
+|---|---|---|
+| Configuration | `config.py` | Intelligence configuration |
+| Pipeline | `pipeline.py` | End-to-end intelligence pipeline |
+| Schemas | `schemas.py` | Knowledge item schemas |
+| Adapters | `adapters.py` | External system adapters |
+| Extraction | `extraction/extractor.py`, `prompts.py` | Knowledge extraction from sources |
+| Generation | `generation/handover.py` | Handover report generation |
+| LLM | `llm/client.py`, `factory.py`, `ollama_client.py` | LLM provider clients |
+| Verification | `verification/contradictions.py`, `evidence.py` | Contradiction and evidence verification |
+| Fixtures | `fixtures/expected_output.json`, `sample_sources.json` | Test fixtures |
+| Tests | `tests/test_pipeline.py` | Pipeline tests |
 
 Design principles:
 
@@ -326,24 +353,38 @@ Design principles:
 ## 🖥️ Frontend Architecture
 
 - **Framework:** Next.js with TypeScript, App Router (`frontend/src/app/`)
-- **Current state:** 🟡 scaffold with `layout.tsx` and `page.tsx`
+- **Routes:**
+  - `/` — Dashboard (`page.tsx`)
+  - `/login` — Login (`login/page.tsx`)
+  - `/register` — Registration (`register/page.tsx`)
+  - `/settings` — Settings (`settings/page.tsx`)
+  - `/projects/create` — Create project (`projects/create/page.tsx`)
+  - `/sources/upload` — Upload source (`sources/upload/page.tsx`)
+  - `/intelligence/reconstruct` — Intelligence reconstruction (`intelligence/reconstruct/page.tsx`)
+  - `/handovers/create` — Create handover (`handovers/create/page.tsx`)
+  - `/[section]` — Section catch-all (`[section]/page.tsx`)
+- **Shell/layout:** `auth-shell.tsx`, `layout.tsx`, `globals.css`
+- **Lib modules:** `lib/api.ts`, `auth.ts`, `labels.ts`, `types.ts`, `metrics.ts`, `mock-data.ts`, `nav.ts`, `require-auth.ts`, `stages.ts`
+- **Components:** `components/dashboard/` (EvidencePanel, IntelligenceSummary, PipelineCard, ReadinessCard, StatTiles), `components/layout/` (MobileNav, Sidebar, ThemeToggle, Topbar), `components/ui/` (StatusChip)
 
-Planned interfaces:
+Implemented interfaces:
 
-| Interface | Purpose | Status |
-|---|---|---|
-| Application dashboard | Entry point and project overview | 🧭 Planned |
-| Project interfaces | Create projects, connect sources | 🧭 Planned |
-| AI findings presentation | Decisions, tasks, risks, blockers with status | 🧭 Planned |
-| Evidence inspection | View the source behind each claim | 🧭 Planned |
-| Handover review | Edit, reject, redact, approve | 🧭 Planned |
-| Backend API integration | Typed client for the backend | 🧭 Planned |
+| Interface | Purpose |
+|---|---|
+| Application dashboard | Entry point and project overview |
+| Authentication | Login and registration |
+| Project interfaces | Create projects |
+| Source upload | Upload documents and repositories |
+| AI findings presentation | Intelligence reconstruction |
+| Handover review | Generate handovers |
+| Settings | Application preferences |
+| Backend API integration | Typed client via `lib/api.ts` |
 
 ## 🗄️ Database Architecture
 
 The database design is documented in [`docs/database_design.md`](docs/database_design.md). The Round 1 proposal specifies PostgreSQL with the following **proposed** tables.
 
-> The repository tree shows no models or migrations yet, so this schema should be treated as **design, not implementation**, until models are added.
+Alembic migrations exist under `backend/alembic/versions/`, and SQLAlchemy models live in `backend/data_engineering/storage/models.py`.
 
 | Proposed table | Purpose |
 |---|---|
@@ -559,9 +600,16 @@ A quick map of where things live:
 
 | Path | Contents |
 |---|---|
-| 📁 `backend/app/` | Backend application: entry point, API route modules, core configuration |
-| 📁 `backend/data_engineering/` | Extraction, preprocessing, schemas, services, storage and tests |
-| 📁 `frontend/` | Next.js and TypeScript application |
+| 📁 `backend/app/` | Backend application: entry point (`main.py`), API route modules, core configuration |
+| 📁 `backend/app/api/` | API route modules: `auth.py`, `handovers.py`, `knowledge.py`, `projects.py`, `sources.py`, `system.py`, `users.py` |
+| 📁 `backend/app/core/` | Core modules: `config.py`, `security.py`, `audit.py` |
+| 📁 `backend/alembic/` | Database migrations (`env.py`, `versions/`) |
+| 📁 `backend/data_engineering/` | Data engineering: connectors, extractors, generators, preprocessing, schemas, services, storage, tests |
+| 📁 `backend/intelligence/` | AI/LLM intelligence: pipeline, extraction, generation, LLM clients, verification, tests |
+| 📁 `backend/tests/` | Root-level backend tests |
+| 📁 `frontend/src/app/` | Next.js App Router pages and route segments |
+| 📁 `frontend/src/components/` | React components: `dashboard/`, `layout/`, `ui/` |
+| 📁 `frontend/src/lib/` | Lib modules: `api.ts`, `auth.ts`, `labels.ts`, `types.ts`, and more |
 | 📁 `docs/` | Architecture, data flow, database, API and workflow documents |
 | 📁 `tests/` | Workflow-level tests |
 
@@ -570,7 +618,6 @@ A quick map of where things live:
 HandoverOS/
 │
 ├── backend/
-│   │
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── main.py
@@ -578,7 +625,11 @@ HandoverOS/
 │   │   ├── api/
 │   │   │   ├── __init__.py
 │   │   │   ├── auth.py
+│   │   │   ├── handovers.py
+│   │   │   ├── knowledge.py
 │   │   │   ├── projects.py
+│   │   │   ├── sources.py
+│   │   │   ├── system.py
 │   │   │   └── users.py
 │   │   │
 │   │   └── core/
@@ -591,6 +642,10 @@ HandoverOS/
 │   │   ├── README
 │   │   ├── script.py.mako
 │   │   └── versions/
+│   │       ├── a46e340cb50a_create_initial_database_schema.py
+│   │       ├── b3c9f1a2d4e5_add_source_records_table.py
+│   │       ├── c1d2e3f4a5b6_add_source_id_to_handover_items.py
+│   │       └── e85619cdeaea_add_user_sessions_table.py
 │   │
 │   ├── data_engineering/
 │   │   ├── __init__.py
@@ -633,6 +688,7 @@ HandoverOS/
 │   │   │   ├── __init__.py
 │   │   │   ├── database.py
 │   │   │   ├── init_db.py
+│   │   │   ├── knowledge_repository.py
 │   │   │   ├── models.py
 │   │   │   └── repository.py
 │   │   │
@@ -681,6 +737,14 @@ HandoverOS/
 │   │       ├── contradictions.py
 │   │       └── evidence.py
 │   │
+│   ├── tests/
+│   │   ├── test_auth.py
+│   │   ├── test_knowledge_reconstruction.py
+│   │   ├── test_migration_source_id.py
+│   │   └── test_ollama_integration.py
+│   │
+│   ├── alembic.ini
+│   ├── debug_alembic.py
 │   ├── Dockerfile
 │   └── requirements.txt
 │
@@ -688,9 +752,25 @@ HandoverOS/
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── [section]/
+│   │   │   │   └── page.tsx
+│   │   │   ├── auth-shell.tsx
 │   │   │   ├── globals.css
+│   │   │   ├── handovers/
+│   │   │   │   └── create/
+│   │   │   ├── intelligence/
+│   │   │   │   └── reconstruct/
 │   │   │   ├── layout.tsx
-│   │   │   └── page.tsx
+│   │   │   ├── login/
+│   │   │   │   └── page.tsx
+│   │   │   ├── page.tsx
+│   │   │   ├── projects/
+│   │   │   │   └── create/
+│   │   │   ├── register/
+│   │   │   │   └── page.tsx
+│   │   │   ├── settings/
+│   │   │   │   └── page.tsx
+│   │   │   └── sources/
+│   │   │       └── upload/
 │   │   │
 │   │   ├── components/
 │   │   │   ├── dashboard/
@@ -710,10 +790,13 @@ HandoverOS/
 │   │   │       └── StatusChip.tsx
 │   │   │
 │   │   ├── lib/
+│   │   │   ├── api.ts
+│   │   │   ├── auth.ts
 │   │   │   ├── labels.ts
 │   │   │   ├── metrics.ts
 │   │   │   ├── mock-data.ts
 │   │   │   ├── nav.ts
+│   │   │   ├── require-auth.ts
 │   │   │   ├── stages.ts
 │   │   │   └── types.ts
 │   │   │
@@ -739,8 +822,10 @@ HandoverOS/
 │   └── test_workflow.py
 │
 ├── .gitignore
+├── CHANGELOG.md
 ├── docker-compose.yml
 ├── LICENSE
+├── main.py
 └── README.md
 ```
 

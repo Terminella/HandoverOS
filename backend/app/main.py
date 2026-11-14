@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, projects, users
+from app.api import auth, projects, users, sources, knowledge, handovers, system
 
 from app.core.config import settings
 
@@ -54,6 +54,25 @@ app.include_router(
     prefix=settings.API_PREFIX
 )
 
+app.include_router(
+    sources.router,
+    prefix=settings.API_PREFIX
+)
+
+app.include_router(
+    knowledge.router,
+    prefix=settings.API_PREFIX
+)
+
+app.include_router(
+    handovers.router,
+    prefix=settings.API_PREFIX
+)
+
+app.include_router(
+    system.router,
+    prefix=settings.API_PREFIX
+)
 
 # Root endpoint
 

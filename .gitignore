@@ -29,3 +29,8 @@ node_modules/
 Thumbs.db
 # Local database files
 backend/handoveros.db
+
+# Local SQLite databases and sidecar files
+handoveros.db
+*.db-wal
+*.db-shm

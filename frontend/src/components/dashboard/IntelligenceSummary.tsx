@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ArrowRight, Check, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, Check, Sparkles, TriangleAlert, Target, RefreshCw, AlertCircle, HelpCircle } from "lucide-react";
 import Link from "next/link";
 import { KIND_LABEL } from "../../lib/labels";
 import type { ItemStatus, KnowledgeItem } from "../../lib/types";
@@ -9,6 +9,11 @@ const ROW_ICONS = {
   needs_verification: TriangleAlert,
   conflicting: ArrowLeftRight,
   pending: Sparkles,
+  identified: Target,
+  active: RefreshCw,
+  resolved: Check,
+  under_review: AlertCircle,
+  unknown: HelpCircle,
 } as const;
 
 export default function IntelligenceSummary({ items }: { items: KnowledgeItem[] }) {
@@ -28,7 +33,7 @@ export default function IntelligenceSummary({ items }: { items: KnowledgeItem[] 
       ) : (
         <ul className="rows">
           {items.map((item) => {
-            const Icon = ROW_ICONS[item.status as ItemStatus];
+            const Icon = ROW_ICONS[item.status as keyof typeof ROW_ICONS];
             const title = item.status === "conflicting" ? "Contradiction" : KIND_LABEL[item.kind];
             return (
               <li key={item.id} className="row-item">
