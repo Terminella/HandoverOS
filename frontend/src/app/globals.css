@@ -138,6 +138,9 @@ h1, h2, p { margin: 0; }
 .row-item:first-child { border-top: 0; }
 .row-text { flex: 1; min-width: 0; }
 .row-title { font-weight: 600; }
+.source-name-button { padding: 0; border: 0; background: none; color: var(--primary); font: inherit; text-align: left; cursor: pointer; }
+.source-name-button:hover { text-decoration: underline; }
+.source-name-button:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 2px; }
 .chip { display: inline-flex; align-items: center; gap: 5px; flex: none; padding: 4px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
 .chip-verified { background: var(--primary-soft); color: var(--primary); }
 .chip-needs_verification { background: var(--warn-soft); color: var(--warn); }
@@ -148,6 +151,16 @@ h1, h2, p { margin: 0; }
 
 /* ---------- Placeholder sections ---------- */
 .placeholder { display: grid; gap: 8px; place-items: start; padding: 32px; }
+
+/* ---------- Source document viewer ---------- */
+.source-viewer-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgb(15 23 42 / 58%); }
+.source-viewer { display: flex; flex-direction: column; width: min(920px, 100%); max-height: calc(100dvh - 48px); overflow: hidden; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: 0 24px 80px rgb(15 23 42 / 28%); }
+.source-viewer-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.source-viewer-heading { min-width: 0; }
+.source-viewer-heading .card-title { overflow-wrap: anywhere; }
+.source-viewer-content { min-height: 120px; overflow: auto; padding: 24px; }
+.source-viewer-text { margin: 0; color: var(--text); font: inherit; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.source-viewer-error { color: var(--danger); }
 
 /* ---------- Mobile bottom nav ---------- */
 .mobile-nav { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; justify-content: space-around; padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--border); }
@@ -176,6 +189,12 @@ h1, h2, p { margin: 0; }
   .hero svg { width: 80%; opacity: 0.7; }
 }
 @media (max-width: 480px) { .readiness { flex-direction: column; align-items: flex-start; } }
+@media (max-width: 600px) {
+  .source-viewer-backdrop { align-items: stretch; padding: 10px; }
+  .source-viewer { max-height: 100%; }
+  .source-viewer-header, .source-viewer-content { padding: 16px; }
+  .source-viewer-header { gap: 12px; }
+}
 
 /* ---------- Authentication ---------- */
 

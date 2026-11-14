@@ -100,6 +100,15 @@ export interface BackendSource {
   project_id: string;
 }
 
+export interface BackendSourceDetail {
+  id: string;
+  name: string;
+  title: string | null;
+  type: string;
+  content: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface BackendHandover {
   id: string;
   projectId: string;

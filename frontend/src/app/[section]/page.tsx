@@ -8,6 +8,7 @@ import type {
   BackendProject,
   BackendKnowledgeItem,
   BackendSource,
+  BackendSourceDetail,
   Handover,
   KnowledgeItem,
   Source,
@@ -38,14 +39,116 @@ function ProjectRow({ project, onSelect }: { project: BackendProject; onSelect: 
   );
 }
 
-function SourceRow({ source }: { source: Source }) {
+function SourceRow({
+  source,
+  onSelect,
+}: {
+  source: Source;
+  onSelect: (source: Source) => void;
+}) {
   return (
     <li key={source.id} className="row-item">
       <div className="row-text">
-        <p className="row-title">{source.name}</p>
+        <button
+          type="button"
+          className="row-title source-name-button"
+          onClick={() => onSelect(source)}
+        >
+          {source.name}
+        </button>
         <p className="muted">{source.type}</p>
       </div>
     </li>
+  );
+}
+
+function SourceDetailViewer({
+  projectId,
+  source,
+  token,
+  onClose,
+}: {
+  projectId: string;
+  source: Source;
+  token: string | undefined;
+  onClose: () => void;
+}) {
+  const [detail, setDetail] = useState<BackendSourceDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadSource() {
+      setDetail(null);
+      setError(null);
+      setLoading(true);
+
+      try {
+        const response = await apiRequest<BackendSourceDetail>(
+          `/sources/${encodeURIComponent(projectId)}/${encodeURIComponent(source.id)}`,
+          token
+        );
+        if (active) setDetail(response);
+      } catch (err) {
+        if (active) {
+          setError(err instanceof Error ? err.message : "Unable to load this document.");
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    loadSource();
+    return () => {
+      active = false;
+    };
+  }, [projectId, source.id, token]);
+
+  const fileName = detail?.metadata.file_name;
+  const title =
+    (typeof fileName === "string" && fileName) ||
+    detail?.title ||
+    detail?.name ||
+    source.name;
+  const fileType =
+    (typeof detail?.metadata.file_type === "string" && detail.metadata.file_type) ||
+    detail?.type ||
+    source.type;
+
+  return (
+    <div className="source-viewer-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <section
+        className="source-viewer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="source-viewer-title"
+      >
+        <header className="source-viewer-header">
+          <div className="source-viewer-heading">
+            <h2 id="source-viewer-title" className="card-title">{title}</h2>
+            <p className="muted">{fileType.toUpperCase()}</p>
+          </div>
+          <button type="button" className="action-btn" onClick={onClose} aria-label="Close document viewer">
+            Close
+          </button>
+        </header>
+        <div className="source-viewer-content" aria-live="polite">
+          {loading ? (
+            <p className="muted" role="status">Loading document text...</p>
+          ) : error ? (
+            <p className="source-viewer-error" role="alert">{error}</p>
+          ) : detail?.content ? (
+            <pre className="source-viewer-text">{detail.content}</pre>
+          ) : (
+            <p className="muted">No extracted text is available for this document.</p>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -110,6 +213,14 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedSource, setSelectedSource] = useState<{
+    source: Source;
+    projectId: string;
+  } | null>(null);
+  useEffect(() => {
+    setSelectedSource(null);
+  }, [selectedProjectId]);
+
   useEffect(() => {
   const syncSelectedProject = () => {
     const storedProjectId = localStorage.getItem("handoveros-selected-project");
@@ -251,7 +362,15 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
                 </li>
               ) : null}
               {sources.map((s) => (
-                <SourceRow key={s.id} source={s} />
+                <SourceRow
+                  key={s.id}
+                  source={s}
+                  onSelect={(source) => {
+                    if (selectedProjectId) {
+                      setSelectedSource({ source, projectId: selectedProjectId });
+                    }
+                  }}
+                />
               ))}
             </ul>
           )}
@@ -345,6 +464,17 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
         </div>
       </div>
       {sectionContent()}
+      {section === "sources" &&
+        selectedProjectId &&
+        selectedSource?.projectId === selectedProjectId && (
+          <SourceDetailViewer
+            key={`${selectedSource.projectId}:${selectedSource.source.id}`}
+            projectId={selectedProjectId}
+            source={selectedSource.source}
+            token={token}
+            onClose={() => setSelectedSource(null)}
+          />
+        )}
     </section>
   );
 }

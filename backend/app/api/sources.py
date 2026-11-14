@@ -288,9 +288,58 @@ def get_project_sources(
     return [
         {
             "id": source.id,
-            "name": source.source_name,
+            "name": (
+                source.source_metadata.get("file_name")
+                or source.title
+                or source.source_name
+            ),
             "type": source.source_type,
             "source_id": source.source_id,
         }
         for source in sources
     ]
+
+
+@router.get("/{project_id}/{source_id}")
+def get_source_detail(
+    project_id: str,
+    source_id: str,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db)
+):
+    user_id = get_authenticated_user(authorization, db)
+
+    membership = db.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == user_id
+        )
+    )
+
+    if not membership:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied"
+        )
+
+    source = db.scalar(
+        select(Source).where(
+            Source.id == source_id,
+            Source.project_id == project_id
+        )
+    )
+
+    if source is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Source not found"
+        )
+
+    return {
+        "id": source.id,
+        "name": source.source_name,
+        "title": source.title,
+        "type": source.source_type,
+        "content": source.content,
+        "metadata": source.source_metadata,
+    }
