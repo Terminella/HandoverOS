@@ -125,7 +125,7 @@ export default function SourceUploadPage() {
       setError("Please select or enter a project ID.");
       return;
     }
-    const pending = files.filter((f) => f.status === "pending" || f.status === "error");
+    const pending = files.filter((f) => f.status === "pending");
     if (pending.length === 0) {
       setError("No files to upload.");
       return;
@@ -241,16 +241,21 @@ export default function SourceUploadPage() {
                     {f.file.type} &middot; {(f.file.size / 1024).toFixed(1)} KB
                   </p>
                 </div>
+
                 {f.status === "uploading" ? (
                   <div className="bar" style={{ width: 120, height: 6 }}>
                     <div className="bar-fill" style={{ width: `${f.progress}%` }} />
                   </div>
                 ) : f.status === "success" ? (
                   <span className="chip chip-verified">Uploaded</span>
-                ) : (
+                ) : f.status === "error" ? (
                   <>
                     <span className="chip chip-danger">Error</span>
-                    {f.error && <span className="muted" style={{ marginLeft: 8 }}>{f.error}</span>}
+                    {f.error && (
+                      <span className="muted" style={{ marginLeft: 8 }}>
+                        {f.error}
+                      </span>
+                    )}
                     <button
                       type="button"
                       className="link-btn"
@@ -268,9 +273,8 @@ export default function SourceUploadPage() {
                       Remove
                     </button>
                   </>
-                )}
-                {f.status === "error" && f.error && (
-                  <p className="muted" style={{ marginTop: 4 }}>{f.error}</p>
+                ) : (
+                  <span className="chip">Ready to upload</span>
                 )}
               </li>
             );
@@ -282,7 +286,12 @@ export default function SourceUploadPage() {
         <button
           type="button"
           className="action-btn"
-          disabled={uploading || files.length === 0 || !projectId}
+          disabled={
+  uploading ||
+  files.length === 0 ||
+  !projectId ||
+  !files.some((f) => f.status === "pending")
+}
           onClick={uploadAll}
         >
           {uploading ? "Uploading..." : "Upload selected"}
