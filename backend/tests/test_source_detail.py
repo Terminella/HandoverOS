@@ -1,5 +1,8 @@
 """Tests for authenticated source-detail retrieval and uploaded PDF text."""
 
+from types import SimpleNamespace
+from unittest.mock import patch
+
 import pymupdf
 import pytest
 from fastapi.testclient import TestClient
@@ -145,6 +148,9 @@ def source_api(tmp_path, monkeypatch):
         editor_token = create_user_session(db, editor.id)
         ids = {
             "project_id": project.id,
+            "owner_id": owner.id,
+            "viewer_id": viewer.id,
+            "editor_id": editor.id,
             "source_id": source.id,
             "other_source_id": other_source.id,
             "knowledge_item_id": knowledge_item.id,
@@ -195,6 +201,86 @@ def test_viewer_can_read_project_sources(source_api):
     assert response.json()[0]["id"] == ids["source_id"]
 
 
+def test_viewer_can_read_source_detail(source_api):
+    client, ids = source_api
+
+    response = client.get(
+        f"/api/sources/{ids['project_id']}/{ids['source_id']}",
+        headers={"Authorization": f"Bearer {ids['viewer_token']}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == ids["source_id"]
+    assert response.json()["content"] == "First paragraph.\n\nSecond paragraph."
+
+
+def test_viewer_can_retrieve_source_pdf(source_api):
+    client, ids = source_api
+    pdf = pymupdf.open()
+    pdf.new_page().insert_text((72, 72), "Viewer-readable PDF.")
+    pdf_bytes = pdf.tobytes()
+    pdf.close()
+
+    upload_response = client.post(
+        f"/api/sources/upload?project_id={ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['owner_token']}"},
+        files={"file": ("viewer-readable.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert upload_response.status_code == 201
+
+    response = client.get(
+        f"/api/sources/{ids['project_id']}/{upload_response.json()['id']}/file",
+        headers={"Authorization": f"Bearer {ids['viewer_token']}"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content == pdf_bytes
+
+
+def test_viewer_can_list_project_knowledge(source_api):
+    client, ids = source_api
+
+    response = client.get(
+        f"/api/knowledge/{ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['viewer_token']}"},
+    )
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == [
+        ids["knowledge_item_id"]
+    ]
+
+
+def test_viewer_can_list_project_handovers(source_api):
+    client, ids = source_api
+
+    response = client.get(
+        f"/api/handovers/{ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['viewer_token']}"},
+    )
+
+    assert response.status_code == 200
+    assert [handover["id"] for handover in response.json()] == [
+        ids["handover_id"]
+    ]
+
+
+def test_viewer_can_list_project_members(source_api):
+    client, ids = source_api
+
+    response = client.get(
+        f"/api/users/project/{ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['viewer_token']}"},
+    )
+
+    assert response.status_code == 200
+    members = {member["id"]: member for member in response.json()}
+    assert members[ids["viewer_id"]]["role"] == "viewer"
+    assert members[ids["owner_id"]]["role"] == "owner"
+    assert members[ids["editor_id"]]["role"] == "editor"
+
+
 def test_source_detail_requires_authentication(source_api):
     client, ids = source_api
 
@@ -208,6 +294,17 @@ def test_source_detail_rejects_non_member(source_api):
 
     response = client.get(
         f"/api/sources/{ids['project_id']}/{ids['source_id']}",
+        headers={"Authorization": f"Bearer {ids['outsider_token']}"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_source_list_rejects_non_member(source_api):
+    client, ids = source_api
+
+    response = client.get(
+        f"/api/sources/{ids['project_id']}",
         headers={"Authorization": f"Bearer {ids['outsider_token']}"},
     )
 
@@ -236,6 +333,61 @@ def test_source_detail_cannot_read_source_from_another_project(source_api):
     assert response.status_code == 404
 
 
+def test_source_file_rejects_non_member(source_api):
+    client, ids = source_api
+    pdf = pymupdf.open()
+    pdf.new_page().insert_text((72, 72), "Project-private PDF.")
+    pdf_bytes = pdf.tobytes()
+    pdf.close()
+
+    upload_response = client.post(
+        f"/api/sources/upload?project_id={ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['owner_token']}"},
+        files={"file": ("private.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert upload_response.status_code == 201
+
+    response = client.get(
+        f"/api/sources/{ids['project_id']}/{upload_response.json()['id']}/file",
+        headers={"Authorization": f"Bearer {ids['outsider_token']}"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_knowledge_list_rejects_non_member(source_api):
+    client, ids = source_api
+
+    response = client.get(
+        f"/api/knowledge/{ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['outsider_token']}"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_handover_list_rejects_non_member(source_api):
+    client, ids = source_api
+
+    response = client.get(
+        f"/api/handovers/{ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['outsider_token']}"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_project_member_list_rejects_non_member(source_api):
+    client, ids = source_api
+
+    response = client.get(
+        f"/api/users/project/{ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['outsider_token']}"},
+    )
+
+    assert response.status_code == 403
+
+
 def test_source_delete_requires_authentication(source_api):
     client, ids = source_api
 
@@ -251,6 +403,72 @@ def test_source_delete_rejects_non_member(source_api):
 
     response = client.delete(
         f"/api/sources/{ids['project_id']}/{ids['source_id']}",
+        headers={"Authorization": f"Bearer {ids['outsider_token']}"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_source_create_rejects_non_member(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        f"/api/sources/?project_id={ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['outsider_token']}"},
+        json={
+            "source_type": "document",
+            "source_name": "outsider-source",
+            "source_id": "outsider-source",
+            "content": "A non-member cannot add a source.",
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_source_upload_rejects_non_member(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        f"/api/sources/upload?project_id={ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['outsider_token']}"},
+        files={"file": ("outsider.txt", b"Private project input.", "text/plain")},
+    )
+
+    assert response.status_code == 403
+
+
+def test_knowledge_reconstruction_rejects_non_member(source_api):
+    client, ids = source_api
+
+    with patch("app.api.knowledge.IntelligencePipeline") as pipeline_class:
+        response = client.post(
+            "/api/knowledge/reconstruct",
+            headers={"Authorization": f"Bearer {ids['outsider_token']}"},
+            json={"project_id": ids["project_id"]},
+        )
+
+    assert response.status_code == 403
+    pipeline_class.assert_not_called()
+
+
+def test_handover_create_rejects_non_member(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        "/api/handovers/",
+        headers={"Authorization": f"Bearer {ids['outsider_token']}"},
+        json={"project_id": ids["project_id"]},
+    )
+
+    assert response.status_code == 403
+
+
+def test_handover_approval_rejects_non_member(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        f"/api/handovers/{ids['handover_id']}/approve",
         headers={"Authorization": f"Bearer {ids['outsider_token']}"},
     )
 
@@ -289,6 +507,98 @@ def test_editor_can_create_source(source_api):
     )
 
     assert response.status_code == 201
+
+
+def test_editor_can_upload_source(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        f"/api/sources/upload?project_id={ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['editor_token']}"},
+        files={"file": ("editor.txt", b"Uploaded by project editor.", "text/plain")},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["project_id"] == ids["project_id"]
+    assert response.json()["file_name"] == "editor.txt"
+
+
+def test_editor_can_delete_source(source_api):
+    client, ids = source_api
+
+    response = client.delete(
+        f"/api/sources/{ids['project_id']}/{ids['source_id']}",
+        headers={"Authorization": f"Bearer {ids['editor_token']}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == ids["source_id"]
+
+
+def test_editor_can_reconstruct_knowledge(source_api):
+    client, ids = source_api
+    pipeline_result = SimpleNamespace(
+        extraction=SimpleNamespace(claims=[]),
+        verification=SimpleNamespace(
+            verified_claims=[],
+            contradictions=[],
+            unsupported_claim_ids=[],
+        ),
+    )
+
+    with patch(
+        "app.api.knowledge.IntelligencePipeline"
+    ) as mock_pipeline_class:
+        mock_pipeline_class.return_value.run.return_value = pipeline_result
+        response = client.post(
+            "/api/knowledge/reconstruct",
+            headers={"Authorization": f"Bearer {ids['editor_token']}"},
+            json={"project_id": ids["project_id"]},
+        )
+
+    assert response.status_code == 201
+    assert response.json()["project_id"] == ids["project_id"]
+    mock_pipeline_class.return_value.run.assert_called_once()
+
+
+def test_editor_can_create_handover(source_api):
+    client, ids = source_api
+    db = ids["session_factory"]()
+    try:
+        knowledge_item = db.get(KnowledgeItem, ids["knowledge_item_id"])
+        assert knowledge_item is not None
+        knowledge_item.status = "verified"
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.post(
+        "/api/handovers/",
+        headers={"Authorization": f"Bearer {ids['editor_token']}"},
+        json={"project_id": ids["project_id"]},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["projectId"] == ids["project_id"]
+    assert response.json()["status"] == "draft"
+
+
+def test_owner_can_create_source(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        f"/api/sources/?project_id={ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['owner_token']}"},
+        json={
+            "source_type": "document",
+            "source_name": "owner-source",
+            "source_id": "owner-source",
+            "content": "Owners can add project sources.",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["project_id"] == ids["project_id"]
 
 
 def test_viewer_cannot_upload_source(source_api):
@@ -370,6 +680,28 @@ def test_owner_can_approve_handover(source_api):
 
     assert response.status_code == 200
     assert response.json()["status"] == "approved"
+
+
+def test_owner_can_create_handover(source_api):
+    client, ids = source_api
+    db = ids["session_factory"]()
+    try:
+        knowledge_item = db.get(KnowledgeItem, ids["knowledge_item_id"])
+        assert knowledge_item is not None
+        knowledge_item.status = "verified"
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.post(
+        "/api/handovers/",
+        headers={"Authorization": f"Bearer {ids['owner_token']}"},
+        json={"project_id": ids["project_id"]},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["projectId"] == ids["project_id"]
+    assert response.json()["status"] == "draft"
 
 
 def test_source_delete_cannot_remove_source_from_another_project(source_api):
