@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from data_engineering.storage.database import get_db
 from data_engineering.storage.models import ProjectMember, User
 from app.core.config import settings
-from app.core.security import get_user_id_from_token
+from app.core.security import get_user_id_from_token, normalize_email
 
 
 router = APIRouter(
@@ -60,11 +60,19 @@ def require_admin(
     user = get_authenticated_user(authorization, db)
 
     admin_emails = {
-        email.strip().lower()
+        normalize_email(email)
         for email in settings.ADMIN_EMAILS.split(",")
         if email.strip()
     }
-    if user.email.lower() not in admin_emails:
+    admin_user_ids = {
+        user_id.strip()
+        for user_id in settings.ADMIN_USER_IDS.split(",")
+        if user_id.strip()
+    }
+    if (
+        normalize_email(user.email) not in admin_emails
+        or user.id not in admin_user_ids
+    ):
         raise HTTPException(
             status_code=403,
             detail="Administrative permission required"

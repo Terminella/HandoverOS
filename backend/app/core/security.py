@@ -14,6 +14,10 @@ SESSION_LIFETIME_SHORT = timedelta(hours=1)
 SESSION_LIFETIME_LONG = timedelta(days=30)
 
 
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
 def hash_password(password: str) -> str:
     """Hash a password using bcrypt directly.
 

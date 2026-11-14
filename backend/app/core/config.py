@@ -19,6 +19,8 @@ class Settings(BaseSettings):
 
     ADMIN_EMAILS: str = ""
 
+    ADMIN_USER_IDS: str = ""
+
     SOURCE_STORAGE_BACKEND: str = "local"
 
     SOURCE_STORAGE_ROOT: str = "./source_files"

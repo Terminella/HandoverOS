@@ -421,6 +421,7 @@ class TestAuthEndpoints:
 
     def test_project_owner_is_not_global_admin(self, monkeypatch):
         monkeypatch.setattr(settings, "ADMIN_EMAILS", "")
+        monkeypatch.setattr(settings, "ADMIN_USER_IDS", "")
         self.client.post("/api/auth/register", json={
             "name": "Alice Engineer",
             "email": "alice@example.com",
@@ -442,12 +443,107 @@ class TestAuthEndpoints:
 
         assert self.client.get("/api/users/", headers=headers).status_code == 403
 
-        monkeypatch.setattr(settings, "ADMIN_EMAILS", "alice@example.com")
-        users_response = self.client.get("/api/users/", headers=headers)
+    @pytest.mark.parametrize(
+        "claimed_email",
+        [
+            "admin@example.com",
+            " ADMIN@example.com ",
+            "ADMIN@EXAMPLE.COM",
+        ],
+    )
+    def test_public_registration_rejects_configured_admin_email(
+        self,
+        monkeypatch,
+        claimed_email,
+    ):
+        monkeypatch.setattr(settings, "ADMIN_EMAILS", " Admin@Example.com ")
+        response = self.client.post("/api/auth/register", json={
+            "name": "Claimed Admin",
+            "email": claimed_email,
+            "password": "securePass123",
+        })
+
+        assert response.status_code == 403
+        db = self._db()
+        try:
+            assert db.query(User).filter(
+                User.email == "admin@example.com"
+            ).first() is None
+        finally:
+            db.close()
+
+    def test_normal_registration_and_login_normalize_email(self, monkeypatch):
+        monkeypatch.setattr(settings, "ADMIN_EMAILS", "admin@example.com")
+        registration_response = self.client.post("/api/auth/register", json={
+            "name": "Alice Engineer",
+            "email": "  Alice@Example.com  ",
+            "password": "securePass123",
+        })
+        assert registration_response.status_code == 200
+
+        login_response = self.client.post("/api/auth/login", json={
+            "email": " ALICE@EXAMPLE.COM ",
+            "password": "securePass123",
+        })
+        assert login_response.status_code == 200
+        assert login_response.json()["token_type"] == "bearer"
+
+    def test_email_allowlist_without_trusted_user_id_does_not_grant_admin(
+        self,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(settings, "ADMIN_EMAILS", "")
+        self.client.post("/api/auth/register", json={
+            "name": "Previously Registered",
+            "email": "admin@example.com",
+            "password": "securePass123",
+        })
+        login_response = self.client.post("/api/auth/login", json={
+            "email": "admin@example.com",
+            "password": "securePass123",
+        })
+        monkeypatch.setattr(settings, "ADMIN_EMAILS", "admin@example.com")
+        monkeypatch.setattr(settings, "ADMIN_USER_IDS", "")
+
+        response = self.client.get(
+            "/api/users/",
+            headers={
+                "Authorization": f"Bearer {login_response.json()['access_token']}"
+            },
+        )
+
+        assert response.status_code == 403
+
+    def test_trusted_configured_admin_can_list_users(self, monkeypatch):
+        admin_id = "trusted-admin-id"
+        monkeypatch.setattr(settings, "ADMIN_EMAILS", " ADMIN@Example.com ")
+        monkeypatch.setattr(settings, "ADMIN_USER_IDS", f" {admin_id} ")
+        db = self._db()
+        try:
+            db.add(User(
+                id=admin_id,
+                name="Provisioned Admin",
+                email="admin@example.com",
+                password_hash=hash_password("securePass123"),
+            ))
+            db.commit()
+        finally:
+            db.close()
+
+        login_response = self.client.post("/api/auth/login", json={
+            "email": " ADMIN@EXAMPLE.COM ",
+            "password": "securePass123",
+        })
+        assert login_response.status_code == 200
+
+        users_response = self.client.get(
+            "/api/users/",
+            headers={
+                "Authorization": f"Bearer {login_response.json()['access_token']}"
+            },
+        )
         assert users_response.status_code == 200
-        assert [user["email"] for user in users_response.json()] == [
-            "alice@example.com"
-        ]
+        assert any(user["id"] == admin_id for user in users_response.json())
 
     def test_protected_endpoint_with_expired_token(self):
         self.client.post("/api/auth/register", json={

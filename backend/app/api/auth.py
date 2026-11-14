@@ -7,10 +7,12 @@ from sqlalchemy.orm import Session
 
 from data_engineering.storage.database import get_db
 from data_engineering.storage.models import User
+from app.core.config import settings
 from app.core.audit import record_audit
 from app.core.security import (
     hash_password,
     verify_password,
+    normalize_email,
     create_user_session,
     revoke_user_session,
     get_user_id_from_token,
@@ -36,7 +38,18 @@ class LoginRequest(BaseModel):
 
 
 def register(data: RegisterRequest, db: Session):
-    email = str(data.email).lower().strip()
+    email = normalize_email(str(data.email))
+    admin_emails = {
+        normalize_email(configured_email)
+        for configured_email in settings.ADMIN_EMAILS.split(",")
+        if configured_email.strip()
+    }
+
+    if email in admin_emails:
+        raise HTTPException(
+            status_code=403,
+            detail="Administrator accounts must be provisioned securely",
+        )
 
     existing_user = db.scalar(
         select(User).where(User.email == email)
@@ -97,7 +110,7 @@ def login(
     data: LoginRequest,
     db: Session = Depends(get_db)
 ):
-    email = str(data.email).lower().strip()
+    email = normalize_email(str(data.email))
 
     user = db.scalar(
         select(User).where(User.email == email)
