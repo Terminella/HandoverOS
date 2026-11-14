@@ -5,6 +5,11 @@ export const STATUS_LABEL: Record<ItemStatus, string> = {
   needs_verification: "Needs Verification",
   conflicting: "Conflicting",
   pending: "Pending",
+  identified: "Identified",
+  active: "Active",
+  resolved: "Resolved",
+  under_review: "Under Review",
+  unknown: "Unknown",
 };
 
 export const KIND_LABEL: Record<ItemKind, string> = {
@@ -13,4 +18,8 @@ export const KIND_LABEL: Record<ItemKind, string> = {
   blocker: "Blocker",
   risk: "Risk",
   unresolved: "Unresolved Question",
+  dependency: "Dependency",
+  architecture: "Architecture",
+  issue: "Issue",
+  other: "Other",
 };
