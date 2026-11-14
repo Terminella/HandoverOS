@@ -29,6 +29,27 @@ export default function SourceUploadPage() {
   const router = useRouter();
   const token = getStoredToken() ?? undefined;
   const [projectId, setProjectId] = useState("");
+  useEffect(() => {
+  const syncProject = () => {
+    const selectedId = localStorage.getItem("handoveros-selected-project");
+    setProjectId(selectedId || "");
+  };
+
+  const handleProjectChange = (event: Event) => {
+    const customEvent = event as CustomEvent<{ projectId: string }>;
+    setProjectId(customEvent.detail.projectId || "");
+  };
+
+  syncProject();
+
+  window.addEventListener("handoveros-project-change", handleProjectChange);
+  window.addEventListener("storage", syncProject);
+
+  return () => {
+    window.removeEventListener("handoveros-project-change", handleProjectChange);
+    window.removeEventListener("storage", syncProject);
+  };
+}, []);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
