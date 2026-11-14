@@ -892,9 +892,3 @@ All members participate in system integration, documentation and final testing.
 ## 📄 License
 
 This project is licensed under the terms of the [LICENSE](LICENSE) file in this repository.
-
-<div align="center">
-
-<sub>When a person leaves a project, the knowledge required to continue it should remain.</sub>
-
-</div>
