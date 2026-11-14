@@ -40,6 +40,7 @@ from app.core.security import (  # noqa: E402
     SESSION_LIFETIME_SHORT,
     SESSION_LIFETIME_LONG,
 )
+from app.core.config import settings  # noqa: E402
 from data_engineering.storage.database import Base  # noqa: E402
 from data_engineering.storage.models import User, UserSession  # noqa: E402
 
@@ -417,6 +418,36 @@ class TestAuthEndpoints:
         )
         assert profile_response.status_code == 200
         assert profile_response.json()["email"] == "alice@example.com"
+
+    def test_project_owner_is_not_global_admin(self, monkeypatch):
+        monkeypatch.setattr(settings, "ADMIN_EMAILS", "")
+        self.client.post("/api/auth/register", json={
+            "name": "Alice Engineer",
+            "email": "alice@example.com",
+            "password": "securePass123",
+        })
+        login_response = self.client.post("/api/auth/login", json={
+            "email": "alice@example.com",
+            "password": "securePass123",
+        })
+        headers = {
+            "Authorization": f"Bearer {login_response.json()['access_token']}"
+        }
+        project_response = self.client.post(
+            "/api/projects/",
+            headers=headers,
+            json={"name": "Alice Project", "description": ""},
+        )
+        assert project_response.status_code == 201
+
+        assert self.client.get("/api/users/", headers=headers).status_code == 403
+
+        monkeypatch.setattr(settings, "ADMIN_EMAILS", "alice@example.com")
+        users_response = self.client.get("/api/users/", headers=headers)
+        assert users_response.status_code == 200
+        assert [user["email"] for user in users_response.json()] == [
+            "alice@example.com"
+        ]
 
     def test_protected_endpoint_with_expired_token(self):
         self.client.post("/api/auth/register", json={

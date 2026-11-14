@@ -514,6 +514,8 @@ The frontend must be able to reach the backend origin, and the backend must allo
 
 Copy `.env.example` to `.env` and review it alongside `backend/app/core/config.py` and `backend/data_engineering/config.py`. Do not commit `.env` or any credentials.
 
+Set `ADMIN_EMAILS` to a comma-separated list of trusted administrator email addresses to enable the global user-list endpoint; it defaults to empty, so project ownership alone does not grant global administrative access. Project viewers have read-only access, editors and owners may modify project sources, reconstruct knowledge, and create handovers, and only owners may approve handovers. Docker Compose requires a long, URL-safe `POSTGRES_PASSWORD` (it is embedded in `DATABASE_URL`) and binds PostgreSQL to loopback rather than publishing it on all host interfaces.
+
 The variable names are defined in `.env.example`. Based on the proposed architecture, configuration will fall into these groups once the matching features exist:
 
 | Group | Purpose | Status |

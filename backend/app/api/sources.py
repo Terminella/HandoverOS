@@ -22,6 +22,7 @@ from data_engineering.storage.repository import SourceRepository
 from data_engineering.schemas.source_schema import SourceRecord
 from data_engineering.preprocessing.validator import DataValidator
 from data_engineering.extractors.document_extractor import DocumentExtractor
+from app.core.authorization import require_project_role
 from app.core.security import get_user_id_from_token
 from app.core.audit import record_audit
 from data_engineering.storage.source_files import SourceFileStorage, stream_file
@@ -86,18 +87,7 @@ def create_source(
 
     user_id = get_authenticated_user(authorization, db)
 
-    membership = db.scalar(
-        select(ProjectMember).where(
-            ProjectMember.project_id == project_id,
-            ProjectMember.user_id == user_id
-        )
-    )
-
-    if not membership:
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied"
-        )
+    require_project_role(db, project_id, user_id, ("owner", "editor"))
 
     record_data = {
         "project_id": project_id,
@@ -164,18 +154,7 @@ async def upload_source_file(
 
     user_id = get_authenticated_user(authorization, db)
 
-    membership = db.scalar(
-        select(ProjectMember).where(
-            ProjectMember.project_id == project_id,
-            ProjectMember.user_id == user_id
-        )
-    )
-
-    if not membership:
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied"
-        )
+    require_project_role(db, project_id, user_id, ("owner", "editor"))
 
     supported_extensions = {".pdf", ".docx", ".txt", ".csv"}
     file_extension = Path(file.filename or "").suffix.lower()
@@ -440,18 +419,7 @@ def delete_project_source(
 ):
     user_id = get_authenticated_user(authorization, db)
 
-    membership = db.scalar(
-        select(ProjectMember).where(
-            ProjectMember.project_id == project_id,
-            ProjectMember.user_id == user_id
-        )
-    )
-
-    if not membership:
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied"
-        )
+    require_project_role(db, project_id, user_id, ("owner", "editor"))
 
     source = db.scalar(
         select(Source).where(

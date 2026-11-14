@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from data_engineering.storage.database import get_db
 from data_engineering.storage.models import ProjectMember, User
+from app.core.config import settings
 from app.core.security import get_user_id_from_token
 
 
@@ -58,14 +59,12 @@ def require_admin(
 ) -> User:
     user = get_authenticated_user(authorization, db)
 
-    # Administrative permission: user must be an owner of at least one project.
-    is_owner = db.scalar(
-        select(ProjectMember).where(
-            ProjectMember.user_id == user.id,
-            ProjectMember.role == "owner",
-        )
-    )
-    if not is_owner:
+    admin_emails = {
+        email.strip().lower()
+        for email in settings.ADMIN_EMAILS.split(",")
+        if email.strip()
+    }
+    if user.email.lower() not in admin_emails:
         raise HTTPException(
             status_code=403,
             detail="Administrative permission required"

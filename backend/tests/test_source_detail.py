@@ -53,7 +53,17 @@ def source_api(tmp_path, monkeypatch):
             email="project-outsider@example.com",
             password_hash="not-used",
         )
-        db.add_all([owner, outsider])
+        viewer = User(
+            name="Project Viewer",
+            email="project-viewer@example.com",
+            password_hash="not-used",
+        )
+        editor = User(
+            name="Project Editor",
+            email="project-editor@example.com",
+            password_hash="not-used",
+        )
+        db.add_all([owner, outsider, viewer, editor])
         db.flush()
 
         project = Project(
@@ -71,6 +81,8 @@ def source_api(tmp_path, monkeypatch):
         db.add_all([project, other_project])
         db.flush()
         db.add(ProjectMember(project_id=project.id, user_id=owner.id, role="owner"))
+        db.add(ProjectMember(project_id=project.id, user_id=viewer.id, role="viewer"))
+        db.add(ProjectMember(project_id=project.id, user_id=editor.id, role="editor"))
 
         source = Source(
             project_id=project.id,
@@ -129,6 +141,8 @@ def source_api(tmp_path, monkeypatch):
 
         owner_token = create_user_session(db, owner.id)
         outsider_token = create_user_session(db, outsider.id)
+        viewer_token = create_user_session(db, viewer.id)
+        editor_token = create_user_session(db, editor.id)
         ids = {
             "project_id": project.id,
             "source_id": source.id,
@@ -140,6 +154,8 @@ def source_api(tmp_path, monkeypatch):
             "session_factory": SessionLocal,
             "owner_token": owner_token,
             "outsider_token": outsider_token,
+            "viewer_token": viewer_token,
+            "editor_token": editor_token,
         }
 
     yield TestClient(app), ids
@@ -165,6 +181,18 @@ def test_source_detail_returns_extracted_text_and_metadata(source_api):
         "content": "First paragraph.\n\nSecond paragraph.",
         "metadata": {"file_name": "sample.pdf", "file_type": "pdf"},
     }
+
+
+def test_viewer_can_read_project_sources(source_api):
+    client, ids = source_api
+
+    response = client.get(
+        f"/api/sources/{ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['viewer_token']}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()[0]["id"] == ids["source_id"]
 
 
 def test_source_detail_requires_authentication(source_api):
@@ -227,6 +255,121 @@ def test_source_delete_rejects_non_member(source_api):
     )
 
     assert response.status_code == 403
+
+
+def test_viewer_cannot_create_source(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        f"/api/sources/?project_id={ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['viewer_token']}"},
+        json={
+            "source_type": "document",
+            "source_name": "viewer-source",
+            "source_id": "viewer-source",
+            "content": "Viewer cannot add project sources.",
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_editor_can_create_source(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        f"/api/sources/?project_id={ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['editor_token']}"},
+        json={
+            "source_type": "document",
+            "source_name": "editor-source",
+            "source_id": "editor-source",
+            "content": "Editors can add project sources.",
+        },
+    )
+
+    assert response.status_code == 201
+
+
+def test_viewer_cannot_upload_source(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        f"/api/sources/upload?project_id={ids['project_id']}",
+        headers={"Authorization": f"Bearer {ids['viewer_token']}"},
+        files={"file": ("viewer.txt", b"Viewer cannot upload sources.", "text/plain")},
+    )
+
+    assert response.status_code == 403
+
+
+def test_viewer_cannot_delete_source(source_api):
+    client, ids = source_api
+
+    response = client.delete(
+        f"/api/sources/{ids['project_id']}/{ids['source_id']}",
+        headers={"Authorization": f"Bearer {ids['viewer_token']}"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_viewer_cannot_reconstruct_knowledge(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        "/api/knowledge/reconstruct",
+        headers={"Authorization": f"Bearer {ids['viewer_token']}"},
+        json={"project_id": ids["project_id"]},
+    )
+
+    assert response.status_code == 403
+
+
+def test_viewer_cannot_create_handover(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        "/api/handovers/",
+        headers={"Authorization": f"Bearer {ids['viewer_token']}"},
+        json={"project_id": ids["project_id"]},
+    )
+
+    assert response.status_code == 403
+
+
+def test_viewer_cannot_approve_handover(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        f"/api/handovers/{ids['handover_id']}/approve",
+        headers={"Authorization": f"Bearer {ids['viewer_token']}"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_editor_cannot_approve_handover(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        f"/api/handovers/{ids['handover_id']}/approve",
+        headers={"Authorization": f"Bearer {ids['editor_token']}"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_owner_can_approve_handover(source_api):
+    client, ids = source_api
+
+    response = client.post(
+        f"/api/handovers/{ids['handover_id']}/approve",
+        headers={"Authorization": f"Bearer {ids['owner_token']}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "approved"
 
 
 def test_source_delete_cannot_remove_source_from_another_project(source_api):

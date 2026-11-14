@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import uuid
 
 from data_engineering.storage.database import get_db
+from app.core.authorization import require_project_role
 from data_engineering.storage.models import (
     Handover,
     ProjectMember,
@@ -41,18 +42,7 @@ def create_handover(
 
     user_id = get_authenticated_user(authorization, db)
 
-    membership = db.scalar(
-        select(ProjectMember).where(
-            ProjectMember.project_id == project_id,
-            ProjectMember.user_id == user_id
-        )
-    )
-
-    if not membership:
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied"
-        )
+    require_project_role(db, project_id, user_id, ("owner", "editor"))
 
     max_version = db.scalar(
         select(func.max(Handover.version)).where(
@@ -150,18 +140,12 @@ def approve_handover(
             detail="Handover not found"
         )
 
-    membership = db.scalar(
-        select(ProjectMember).where(
-            ProjectMember.project_id == handover.project_id,
-            ProjectMember.user_id == user_id
-        )
+    require_project_role(
+        db,
+        handover.project_id,
+        user_id,
+        ("owner",),
     )
-
-    if not membership:
-        raise HTTPException(
-            status_code=403,
-            detail="Access denied"
-        )
 
     if handover.status != "draft":
         raise HTTPException(

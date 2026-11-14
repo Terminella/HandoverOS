@@ -6,9 +6,9 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-handoveros}
       POSTGRES_USER: ${POSTGRES_USER:-handoveros}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env or environment}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -26,7 +26,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-handoveros}:${POSTGRES_PASSWORD:-change-this-password}@db:5432/${POSTGRES_DB:-handoveros}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-handoveros}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env or environment}@db:5432/${POSTGRES_DB:-handoveros}
       SOURCE_STORAGE_BACKEND: ${SOURCE_STORAGE_BACKEND:-local}
       SOURCE_STORAGE_ROOT: /app/source_files
     ports:
