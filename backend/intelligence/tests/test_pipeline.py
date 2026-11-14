@@ -1,4 +1,3 @@
-
 import json
 from pathlib import Path
 
@@ -6,6 +5,7 @@ import pytest
 
 from intelligence.pipeline import IntelligencePipeline
 from intelligence.schemas import IntelligenceSource
+from intelligence.llm.client import FakeLLMClient
 
 
 FIXTURE_DIR = (
@@ -36,10 +36,14 @@ def load_expected():
         return json.load(file)
 
 
+def _pipeline():
+    return IntelligencePipeline(client=FakeLLMClient())
+
+
 def test_pipeline_produces_structured_output():
 
     sources = load_sources()
-    pipeline = IntelligencePipeline()
+    pipeline = _pipeline()
 
     result = pipeline.run(sources)
 
@@ -55,7 +59,7 @@ def test_expected_knowledge_categories():
     sources = load_sources()
     expected = load_expected()
 
-    result = IntelligencePipeline().run(sources)
+    result = _pipeline().run(sources)
 
     actual_categories = {
         claim.category
@@ -69,7 +73,7 @@ def test_expected_knowledge_categories():
 
 def test_evidence_is_verified():
 
-    result = IntelligencePipeline().run(load_sources())
+    result = _pipeline().run(load_sources())
 
     assert len(result.verification.verified_claims) > 0
 
@@ -95,7 +99,7 @@ def test_contradictions_are_detected():
 
     expected = load_expected()
 
-    result = IntelligencePipeline().run(load_sources())
+    result = _pipeline().run(load_sources())
 
     assert (
         len(result.verification.contradictions)
@@ -105,9 +109,10 @@ def test_contradictions_are_detected():
     assert result.handover.requires_human_review is True
 
 
+
 def test_handover_contains_only_verified_claims():
 
-    result = IntelligencePipeline().run(load_sources())
+    result = _pipeline().run(load_sources())
 
     handover_claims = (
         result.handover.decisions
@@ -133,7 +138,7 @@ def test_mixed_projects_are_rejected():
     )
 
     with pytest.raises(ValueError):
-        IntelligencePipeline().run(
+        _pipeline().run(
             [sources[0], second_project]
         )
 
@@ -141,4 +146,4 @@ def test_mixed_projects_are_rejected():
 def test_empty_input_is_rejected():
 
     with pytest.raises(ValueError):
-        IntelligencePipeline().run([])
+        _pipeline().run([])
