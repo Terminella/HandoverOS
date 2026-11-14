@@ -141,6 +141,12 @@ h1, h2, p { margin: 0; }
 .source-name-button { padding: 0; border: 0; background: none; color: var(--primary); font: inherit; text-align: left; cursor: pointer; }
 .source-name-button:hover { text-decoration: underline; }
 .source-name-button:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 2px; }
+.source-view-button { flex: none; border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; background: var(--surface); color: var(--primary); font: inherit; font-size: 0.875rem; cursor: pointer; }
+.source-view-button:hover { background: var(--primary-soft); }
+.source-remove-button { flex: none; border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; background: var(--surface); color: var(--danger); font: inherit; font-size: 0.875rem; cursor: pointer; }
+.source-remove-button:hover:not(:disabled) { background: var(--danger-soft); }
+.source-remove-button:disabled { cursor: wait; opacity: 0.65; }
+.source-remove-error { margin-top: 4px; color: var(--danger); font-size: 0.875rem; }
 .chip { display: inline-flex; align-items: center; gap: 5px; flex: none; padding: 4px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
 .chip-verified { background: var(--primary-soft); color: var(--primary); }
 .chip-needs_verification { background: var(--warn-soft); color: var(--warn); }
@@ -159,6 +165,13 @@ h1, h2, p { margin: 0; }
 .source-viewer-heading { min-width: 0; }
 .source-viewer-heading .card-title { overflow-wrap: anywhere; }
 .source-viewer-content { min-height: 120px; overflow: auto; padding: 24px; }
+.source-viewer-tabs { display: flex; align-items: center; gap: 8px; padding: 8px 20px 0; border-bottom: 1px solid var(--border); }
+.source-viewer-zoom { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.source-pdf-container { position: relative; }
+.source-pdf-loading { position: absolute; z-index: 1; top: 12px; left: 12px; padding: 8px 12px; border-radius: 8px; background: var(--surface); }
+.source-pdf-frame { display: block; width: 100%; height: min(68vh, 820px); border: 0; border-radius: 8px; background: #17221b; }
+.source-pdf-message { max-width: 680px; margin: 32px auto; text-align: center; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .source-viewer-text { margin: 0; color: var(--text); font: inherit; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .source-viewer-error { color: var(--danger); }
 

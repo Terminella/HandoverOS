@@ -27,11 +27,16 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-handoveros}:${POSTGRES_PASSWORD:-change-this-password}@db:5432/${POSTGRES_DB:-handoveros}
+      SOURCE_STORAGE_BACKEND: ${SOURCE_STORAGE_BACKEND:-local}
+      SOURCE_STORAGE_ROOT: /app/source_files
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - source_files:/app/source_files
 
 volumes:
   postgres_data:
+  source_files:

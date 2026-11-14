@@ -190,6 +190,7 @@ class HandoverItem(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
     handover_id: Mapped[str] = mapped_column(ForeignKey("handovers.id"), nullable=False)
     knowledge_item_id: Mapped[str | None] = mapped_column(ForeignKey("knowledge_items.id"))
+    source_id: Mapped[str | None] = mapped_column(ForeignKey("sources.id"), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     section: Mapped[str] = mapped_column(String(100), nullable=False)
     position: Mapped[int] = mapped_column(Integer, default=0)

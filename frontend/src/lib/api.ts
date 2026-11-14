@@ -147,9 +147,42 @@ export function apiPut<T>(
 
 export function apiDelete<T>(
   endpoint: string,
-  token: string
+  token?: string
 ): Promise<T> {
   return apiCall<T>(endpoint, "DELETE", undefined, token);
+}
+
+export async function apiDownload(
+  endpoint: string,
+  token?: string
+): Promise<Blob> {
+  const effectiveToken = token ?? getStoredToken();
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: "GET",
+      headers: effectiveToken ? { Authorization: `Bearer ${effectiveToken}` } : {},
+      cache: "no-store",
+    });
+  } catch {
+    throw new Error("Unable to connect to the server.");
+  }
+  if (response.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("handoveros-token");
+      window.location.replace("/login");
+    }
+    throw new Error("Authentication required. Please sign in again.");
+  }
+  if (!response.ok) {
+    let message = `Unable to load PDF (HTTP ${response.status}).`;
+    try {
+      const body = await response.json();
+      if (typeof body.detail === "string") message = body.detail;
+    } catch { /* use status fallback */ }
+    throw new Error(message);
+  }
+  return response.blob();
 }
 
 export { getStoredToken };

@@ -31,6 +31,7 @@ openai
 PyMuPDF
 python-docx
 pandas
+boto3
 
 # Testing
 pytest

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiRequest, getStoredToken } from "../../lib/api";
+import { apiDelete, apiDownload, apiRequest, getStoredToken } from "../../lib/api";
 import StatusChip from "../../components/ui/StatusChip";
 import type {
   BackendProject,
@@ -42,9 +42,15 @@ function ProjectRow({ project, onSelect }: { project: BackendProject; onSelect: 
 function SourceRow({
   source,
   onSelect,
+  onRemove,
+  removing,
+  removeError,
 }: {
   source: Source;
   onSelect: (source: Source) => void;
+  onRemove: (source: Source) => void;
+  removing: boolean;
+  removeError?: string;
 }) {
   return (
     <li key={source.id} className="row-item">
@@ -57,7 +63,23 @@ function SourceRow({
           {source.name}
         </button>
         <p className="muted">{source.type}</p>
+        {removeError ? <p className="source-remove-error" role="alert">{removeError}</p> : null}
       </div>
+      <button
+        type="button"
+        className="source-view-button"
+        onClick={() => onSelect(source)}
+      >
+        View
+      </button>
+      <button
+        type="button"
+        className="source-remove-button"
+        disabled={removing}
+        onClick={() => onRemove(source)}
+      >
+        {removing ? "Removing..." : "Remove"}
+      </button>
     </li>
   );
 }
@@ -76,9 +98,16 @@ function SourceDetailViewer({
   const [detail, setDetail] = useState<BackendSourceDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfReady, setPdfReady] = useState(false);
+  const [activeTab, setActiveTab] = useState<"pdf" | "text">("pdf");
+  const [zoom, setZoom] = useState(100);
 
   useEffect(() => {
     let active = true;
+    let createdPdfUrl: string | null = null;
 
     async function loadSource() {
       setDetail(null);
@@ -90,7 +119,27 @@ function SourceDetailViewer({
           `/sources/${encodeURIComponent(projectId)}/${encodeURIComponent(source.id)}`,
           token
         );
-        if (active) setDetail(response);
+        if (!active) return;
+        setDetail(response);
+        if (response.metadata.file_type === "pdf") {
+          setPdfLoading(true);
+          try {
+            const blob = await apiDownload(
+              `/sources/${encodeURIComponent(projectId)}/${encodeURIComponent(source.id)}/file`,
+              token
+            );
+            if (active) {
+              createdPdfUrl = URL.createObjectURL(blob);
+              setPdfUrl(createdPdfUrl);
+            }
+          } catch (err) {
+            if (active) setPdfError(err instanceof Error ? err.message : "Unable to load the original PDF.");
+          } finally {
+            if (active) setPdfLoading(false);
+          }
+        } else {
+          setActiveTab("text");
+        }
       } catch (err) {
         if (active) {
           setError(err instanceof Error ? err.message : "Unable to load this document.");
@@ -103,6 +152,7 @@ function SourceDetailViewer({
     loadSource();
     return () => {
       active = false;
+      if (createdPdfUrl) URL.revokeObjectURL(createdPdfUrl);
     };
   }, [projectId, source.id, token]);
 
@@ -136,16 +186,33 @@ function SourceDetailViewer({
             Close
           </button>
         </header>
+        <nav className="source-viewer-tabs" aria-label="Document views">
+          {fileType.toLowerCase() === "pdf" ? (
+            <button type="button" className={`tab-btn ${activeTab === "pdf" ? "tab-active" : ""}`} onClick={() => setActiveTab("pdf")}>PDF Preview</button>
+          ) : null}
+          <button type="button" className={`tab-btn ${activeTab === "text" ? "tab-active" : ""}`} onClick={() => setActiveTab("text")}>Extracted Text</button>
+          {activeTab === "pdf" && pdfUrl ? (
+            <div className="source-viewer-zoom" aria-label="PDF zoom controls">
+              <button type="button" className="tab-btn" onClick={() => setZoom((value) => Math.max(50, value - 10))} aria-label="Zoom out">−</button>
+              <span className="muted">{zoom}%</span>
+              <button type="button" className="tab-btn" onClick={() => setZoom((value) => Math.min(200, value + 10))} aria-label="Zoom in">+</button>
+            </div>
+          ) : null}
+        </nav>
         <div className="source-viewer-content" aria-live="polite">
-          {loading ? (
-            <p className="muted" role="status">Loading document text...</p>
-          ) : error ? (
+          {loading ? <p className="muted" role="status">Loading document...</p> : error ? (
             <p className="source-viewer-error" role="alert">{error}</p>
-          ) : detail?.content ? (
-            <pre className="source-viewer-text">{detail.content}</pre>
-          ) : (
+          ) : activeTab === "pdf" ? (
+            pdfLoading ? <p className="muted" role="status">Loading original PDF...</p> : pdfUrl ? (
+              <div className="source-pdf-container">
+                {!pdfReady ? <p className="muted source-pdf-loading" role="status">Rendering PDF pages...</p> : null}
+                <iframe className="source-pdf-frame" title={`PDF preview: ${title}`} src={`${pdfUrl}#zoom=${zoom}`} onLoad={() => setPdfReady(true)} />
+              </div>
+            ) : <div className="source-pdf-message" role={pdfError ? "alert" : "status"}><p>{pdfError || "Original PDF preview is unavailable."}</p><p className="muted">Previously uploaded documents only contain extracted text. Re-upload this file to enable PDF preview.</p></div>
+          ) : detail?.content ? <pre className="source-viewer-text">{detail.content}</pre> : (
             <p className="muted">No extracted text is available for this document.</p>
           )}
+          {pdfReady && activeTab === "pdf" ? <span className="sr-only">PDF loaded</span> : null}
         </div>
       </section>
     </div>
@@ -217,6 +284,9 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
     source: Source;
     projectId: string;
   } | null>(null);
+  const [removingSourceIds, setRemovingSourceIds] = useState<Set<string>>(new Set());
+  const [sourceRemoveErrors, setSourceRemoveErrors] = useState<Record<string, string>>({});
+  const removingSourceIdsRef = useRef(new Set<string>());
   useEffect(() => {
     setSelectedSource(null);
   }, [selectedProjectId]);
@@ -247,6 +317,43 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
 
   const token = getStoredToken() ?? undefined;
 
+  const removeSource = async (source: Source) => {
+    if (!selectedProjectId || removingSourceIdsRef.current.has(source.id)) return;
+    if (!window.confirm(`Remove "${source.name}" from this project?`)) return;
+
+    const projectId = selectedProjectId;
+    removingSourceIdsRef.current.add(source.id);
+    setRemovingSourceIds(new Set(removingSourceIdsRef.current));
+    setSourceRemoveErrors((current) => {
+      const next = { ...current };
+      delete next[source.id];
+      return next;
+    });
+
+    try {
+      await apiDelete<{ id: string; message: string }>(
+        `/sources/${encodeURIComponent(projectId)}/${encodeURIComponent(source.id)}`,
+        token
+      );
+      if (selectedProjectId === projectId) {
+        setSources((current) => current.filter((item) => item.id !== source.id));
+      }
+      setSelectedSource((current) =>
+        current?.projectId === projectId && current.source.id === source.id
+          ? null
+          : current
+      );
+    } catch (err) {
+      setSourceRemoveErrors((current) => ({
+        ...current,
+        [source.id]: err instanceof Error ? err.message : "Unable to remove this source.",
+      }));
+    } finally {
+      removingSourceIdsRef.current.delete(source.id);
+      setRemovingSourceIds(new Set(removingSourceIdsRef.current));
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     async function loadSectionData() {
@@ -261,8 +368,9 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
             setSelectedProjectId(response[0].id);
           }
         } else if (section === "sources" && selectedProjectId) {
+          setSources([]);
           const response = await apiRequest<BackendSource[]>(`/sources/${selectedProjectId}`, token);
-          setSources(response.map(mapBackendSource));
+          if (mounted) setSources(response.map(mapBackendSource));
         } else if (section === "intelligence" && selectedProjectId) {
           const response = await apiRequest<BackendKnowledgeItem[]>(`/knowledge/${selectedProjectId}`, token);
           setKnowledgeItems(response.map(mapBackendKnowledgeItem));
@@ -365,6 +473,9 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
                 <SourceRow
                   key={s.id}
                   source={s}
+                  onRemove={removeSource}
+                  removing={removingSourceIds.has(s.id)}
+                  removeError={sourceRemoveErrors[s.id]}
                   onSelect={(source) => {
                     if (selectedProjectId) {
                       setSelectedSource({ source, projectId: selectedProjectId });

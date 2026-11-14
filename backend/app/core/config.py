@@ -1,5 +1,3 @@
-import os
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +16,14 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api"
 
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    SOURCE_STORAGE_BACKEND: str = "local"
+
+    SOURCE_STORAGE_ROOT: str = "./source_files"
+
+    SOURCE_STORAGE_BUCKET: str | None = None
+
+    SOURCE_STORAGE_ENDPOINT_URL: str | None = None
 
     OPENAI_API_KEY: str | None = None
 
