@@ -32,6 +32,7 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    remember_me: bool = False
 
 
 def register(data: RegisterRequest, db: Session):
@@ -111,7 +112,7 @@ def login(
             detail="Invalid email or password"
         )
 
-    token = create_user_session(db, user.id)
+    token = create_user_session(db, user.id, remember_me=data.remember_me)
 
     record_audit(
         db=db,
