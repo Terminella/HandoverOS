@@ -1,25 +1,38 @@
 
+import bcrypt
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from data_engineering.storage.models import UserSession
 
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-SESSION_LIFETIME = timedelta(hours=12)
+SESSION_LIFETIME_SHORT = timedelta(hours=1)
+SESSION_LIFETIME_LONG = timedelta(days=30)
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    """Hash a password using bcrypt directly.
+
+    bcrypt natively limits passwords to 72 bytes; truncate longer
+    passwords to avoid runtime errors.
+    """
+    pwd_bytes = password.encode("utf-8")[:72]
+    return bcrypt.hashpw(pwd_bytes, bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(password, hashed_password)
+    """Verify a password against a bcrypt hash."""
+    try:
+        return bcrypt.checkpw(
+            password.encode("utf-8")[:72],
+            hashed_password.encode("utf-8"),
+        )
+    except ValueError:
+        return False
 
 
 def generate_access_token() -> str:
@@ -30,12 +43,21 @@ def hash_access_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def create_user_session(db: Session, user_id: str) -> str:
+def create_user_session(
+    db: Session,
+    user_id: str,
+    remember_me: bool = False,
+) -> str:
     token = generate_access_token()
+    lifetime = (
+        SESSION_LIFETIME_LONG
+        if remember_me
+        else SESSION_LIFETIME_SHORT
+    )
     session = UserSession(
         user_id=user_id,
         token_hash=hash_access_token(token),
-        expires_at=datetime.now(timezone.utc) + SESSION_LIFETIME
+        expires_at=datetime.now(timezone.utc) + lifetime,
     )
     db.add(session)
     db.commit()
