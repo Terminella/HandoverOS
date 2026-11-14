@@ -91,22 +91,70 @@ class SourceRecordRepository:
         return db_record
 
     def create_many(self, records: list[SourceRecord]) -> list[SourceRecordModel]:
-        db_records = []
+        from sqlalchemy import select, or_
 
         try:
+            if not records:
+                self.db.commit()
+                return []
+
+            # Remove duplicates within the incoming batch.
+            unique_records = {}
+
             for record in records:
-                record_data = record.model_dump(mode="json")
-                record_data["source_metadata"] = record_data.pop("metadata", {})
+                key = (
+                    record.project_id,
+                    record.source_type,
+                    record.source_id
+                )
+                unique_records[key] = record
 
-                db_records.append(SourceRecordModel(**record_data))
+            # Find records that already exist in the database.
+            conditions = [
+                (
+                    (SourceRecordModel.project_id == project_id)
+                    & (SourceRecordModel.source_type == source_type)
+                    & (SourceRecordModel.source_id == source_id)
+                )
+                for project_id, source_type, source_id in unique_records
+            ]
 
-            self.db.add_all(db_records)
+            statement = select(SourceRecordModel).where(or_(*conditions))
+
+            existing_records = (
+                self.db.execute(statement).scalars().all()
+            )
+
+            existing_keys = {
+                (
+                    record.project_id,
+                    record.source_type,
+                    record.source_id
+                )
+                for record in existing_records
+            }
+
+            # Only insert genuinely new records.
+            new_records = []
+
+            for key, record in unique_records.items():
+                if key in existing_keys:
+                    continue
+
+                data = record.model_dump(mode="json")
+                data["source_metadata"] = data.pop("metadata", {})
+
+                new_records.append(SourceRecordModel(**data))
+
+            if new_records:
+                self.db.add_all(new_records)
+
             self.db.commit()
 
-            for record in db_records:
+            for record in new_records:
                 self.db.refresh(record)
 
-            return db_records
+            return new_records
 
         except Exception:
             self.db.rollback()

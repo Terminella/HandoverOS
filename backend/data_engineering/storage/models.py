@@ -13,7 +13,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
-from datetime import datetime
 from typing import Optional, Any
 
 from sqlalchemy import (
@@ -24,7 +23,6 @@ from sqlalchemy import (
     DateTime,
     Index,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 
 from data_engineering.storage.database import Base
 
@@ -299,7 +297,7 @@ class SourceRecordModel(Base):
     ingested_at = Column(
         DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
     )
 
     content_hash = Column(String(128), nullable=True)
@@ -307,7 +305,7 @@ class SourceRecordModel(Base):
     # Additional metadata
     source_metadata = Column(
         "metadata",
-        JSONB,
+        JSON,
         nullable=False,
         default=dict,
     )
