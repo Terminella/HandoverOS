@@ -1,10 +1,8 @@
 
 import os
-
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from dotenv import load_dotenv
-
 
 # Locate the HandoverOS repository root.
 # config.py -> intelligence -> backend -> HandoverOS
@@ -13,6 +11,11 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 # Load the root .env file.
 # Existing system environment variables take precedence.
 load_dotenv(REPOSITORY_ROOT / ".env")
+
+
+# Model selection modes.
+MODEL_SELECTION_AUTO = "auto"
+MODEL_SELECTION_MANUAL = "manual"
 
 
 @dataclass(frozen=True)
@@ -24,6 +27,10 @@ class IntelligenceConfig:
 
     # Ollama configuration
     ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str | None = None  # None means automatic discovery
+
+    # Model selection mode: "auto" or "manual"
+    model_selection_mode: str = MODEL_SELECTION_AUTO
 
     # Extraction limits
     max_input_characters: int = 100_000
@@ -69,8 +76,17 @@ class IntelligenceConfig:
         ):
             raise ValueError("Invalid Ollama base URL")
 
+        if self.model_selection_mode not in {
+            MODEL_SELECTION_AUTO,
+            MODEL_SELECTION_MANUAL,
+        }:
+            raise ValueError(
+                f"Invalid model selection mode: {self.model_selection_mode}"
+            )
+
     @classmethod
     def from_env(cls):
+        ollama_model = os.getenv("OLLAMA_MODEL", "").strip()
         return cls(
             provider=os.getenv(
                 "LLM_PROVIDER",
@@ -86,6 +102,13 @@ class IntelligenceConfig:
                 "OLLAMA_BASE_URL",
                 "http://127.0.0.1:11434",
             ).strip().rstrip("/"),
+
+            ollama_model=ollama_model or None,
+
+            model_selection_mode=os.getenv(
+                "OLLAMA_MODEL_SELECTION_MODE",
+                MODEL_SELECTION_AUTO,
+            ).strip().lower(),
 
             max_input_characters=int(
                 os.getenv("LLM_MAX_INPUT_CHARACTERS", "100000")
