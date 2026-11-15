@@ -12,6 +12,7 @@ import { apiRequest } from "../lib/api";
 import { getStoredToken } from "../lib/api";
 import type { BackendProject, BackendKnowledgeItem, BackendSource, ItemStatus, KnowledgeItem, Project, Source } from "../lib/types";
 import { mapBackendKnowledgeItem, mapBackendProject, mapBackendSource } from "../lib/types";
+import { PROJECT_CHANGE_EVENT, PROJECT_STORAGE_KEY, deduplicateProjects } from "../lib/project-selection";
 
 export default function OverviewPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -20,6 +21,8 @@ export default function OverviewPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [projectDataLoading, setProjectDataLoading] = useState(false);
+  const [projectDataError, setProjectDataError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -29,9 +32,14 @@ export default function OverviewPage() {
         const token = getStoredToken() ?? undefined;
         const response = await apiRequest<BackendProject[]>("/projects", token);
         if (mounted) {
-          const mapped = response.map(mapBackendProject);
+          const mapped = deduplicateProjects(response.map(mapBackendProject));
           setProjects(mapped);
-          if (mapped.length > 0 && !selectedProjectId) {
+          const stored = typeof window !== "undefined"
+            ? localStorage.getItem(PROJECT_STORAGE_KEY)
+            : null;
+          if (stored && mapped.some((p) => p.id === stored)) {
+            setSelectedProjectId(stored);
+          } else if (mapped.length > 0) {
             setSelectedProjectId(mapped[0].id);
           }
         }
@@ -48,9 +56,37 @@ export default function OverviewPage() {
   }, []);
 
   useEffect(() => {
+    const syncProject = () => {
+      const stored = localStorage.getItem(PROJECT_STORAGE_KEY);
+      if (stored) setSelectedProjectId(stored);
+    };
+
+    const handleProjectChange = (event: Event) => {
+      const customEvent = event as CustomEvent<{ projectId?: string }>;
+      if (customEvent.detail?.projectId) {
+        setSelectedProjectId(customEvent.detail.projectId);
+      }
+    };
+
+    syncProject();
+
+    window.addEventListener(PROJECT_CHANGE_EVENT, handleProjectChange);
+    window.addEventListener("storage", syncProject);
+
+    return () => {
+      window.removeEventListener(PROJECT_CHANGE_EVENT, handleProjectChange);
+      window.removeEventListener("storage", syncProject);
+    };
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
     async function loadProjectData() {
       if (!selectedProjectId) return;
+      setProjectDataLoading(true);
+      setProjectDataError(null);
+      setKnowledgeItems([]);
+      setSources([]);
       try {
         const token = getStoredToken() ?? undefined;
         const [knowledgeResponse, sourcesResponse] = await Promise.all([
@@ -63,8 +99,10 @@ export default function OverviewPage() {
         }
       } catch (err) {
         if (mounted) {
-          console.error("Failed to load project data", err);
+          setProjectDataError(err instanceof Error ? err.message : "Failed to load project data");
         }
+      } finally {
+        if (mounted) setProjectDataLoading(false);
       }
     }
     loadProjectData();
@@ -100,6 +138,26 @@ export default function OverviewPage() {
   }
 
   const project = projects.find((p) => p.id === selectedProjectId) || projects[0];
+
+  if (projectDataLoading) {
+    return (
+      <section className="card placeholder" role="status" aria-live="polite">
+        <h1 className="card-title">Loading project workspace...</h1>
+        <p className="muted">Refreshing sources and reconstructed knowledge for {project.name}.</p>
+      </section>
+    );
+  }
+
+  if (projectDataError) {
+    return (
+      <section className="card placeholder" role="alert">
+        <h1 className="card-title">Unable to load project workspace</h1>
+        <p className="muted">{projectDataError}</p>
+        <p className="muted">The project data could not be refreshed, so metrics are not displayed.</p>
+      </section>
+    );
+  }
+
   const m = computeMetrics(knowledgeItems);
 
   const first = (status: ItemStatus) => knowledgeItems.find((i) => i.status === status);
