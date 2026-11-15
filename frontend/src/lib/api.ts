@@ -112,11 +112,19 @@ async function apiCall<T>(
     const message = extractErrorMessage(errorBody);
 
     if (response.status >= 500) {
-      // Log server errors for diagnostics but show a safe user message.
+      // Reconstruction and LLM endpoints return deliberately sanitised,
+      // actionable details. Keep those details visible instead of replacing
+      // every provider failure with the same generic message.
       if (typeof console !== "undefined") {
-        console.error(`Server error ${response.status} for ${endpoint}`, errorBody);
+        console.error(`Server error ${response.status} for ${endpoint}`);
       }
-      throw new Error("Something went wrong on the server. Please try again later.");
+      const exposesSafeDetail =
+        endpoint.startsWith("/knowledge/") || endpoint.startsWith("/system/llm/");
+      throw new Error(
+        exposesSafeDetail && message !== "Request failed."
+          ? message
+          : "Something went wrong on the server. Please try again later."
+      );
     }
 
     throw new Error(message);

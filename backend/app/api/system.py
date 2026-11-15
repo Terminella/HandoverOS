@@ -305,5 +305,5 @@ async def test_llm_connection(
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Ollama test failed: {exc}",
+            detail="Ollama connection test failed. Please retry.",
         )
