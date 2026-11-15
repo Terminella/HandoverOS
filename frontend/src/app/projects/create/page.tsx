@@ -39,7 +39,7 @@ export default function CreateProjectPage() {
   }
 
   return (
-    <section className="card">
+    <section className="card section-card section-project-create">
       <div className="card-head">
         <div>
           <h1 className="card-title">Create Project</h1>

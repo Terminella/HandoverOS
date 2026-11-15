@@ -86,7 +86,7 @@ export default function CreateHandoverPage() {
   }
 
   return (
-    <section className="card">
+    <section className="card section-card section-handover-create">
       <div className="card-head">
         <div>
           <h1 className="card-title">Generate Handover</h1>
