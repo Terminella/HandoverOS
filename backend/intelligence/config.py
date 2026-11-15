@@ -64,8 +64,6 @@ class IntelligenceConfig:
         if self.provider not in {
             "mock",
             "ollama",
-            "groq",
-            "gemini",
         }:
             raise ValueError(
                 f"Unsupported LLM provider: {self.provider}"
