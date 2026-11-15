@@ -37,6 +37,18 @@ services:
     volumes:
       - source_files:/app/source_files
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: handoveros-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+
 volumes:
   postgres_data:
   source_files:
