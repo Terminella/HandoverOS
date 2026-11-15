@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AlertTriangle, CheckCircle2, FileText, FolderKanban, Users } from "lucide-react";
 import { apiDelete, apiDownload, apiRequest, getStoredToken } from "../../lib/api";
 import StatusChip from "../../components/ui/StatusChip";
 import type {
@@ -14,6 +15,12 @@ import type {
   Source,
 } from "../../lib/types";
 import { mapBackendKnowledgeItem, mapBackendSource } from "../../lib/types";
+import {
+  PROJECT_CHANGE_EVENT,
+  PROJECT_STORAGE_KEY,
+  deduplicateProjects,
+  publishProjectSelection,
+} from "../../lib/project-selection";
 
 const SECTIONS: Record<string, { title: string; subtitle?: string }> = {
   projects: { title: "Projects", subtitle: "Connected project workspaces" },
@@ -26,15 +33,32 @@ const SECTIONS: Record<string, { title: string; subtitle?: string }> = {
 
 type SectionParams = { section: string };
 
-function ProjectRow({ project, onSelect }: { project: BackendProject; onSelect: (id: string) => void }) {
+function ProjectRow({ project, selected, onSelect }: { project: BackendProject; selected: boolean; onSelect: (id: string) => void }) {
   return (
-    <li key={project.id} className="row-item" onClick={() => onSelect(project.id)}>
-      <div className="row-text">
-        <p className="row-title">{project.name}</p>
-        <p className="muted">
-          {project.description || "No description"} &middot; {project.status}
-        </p>
+    <li
+      key={project.id}
+      className={`project-card ${selected ? "project-card-selected" : ""}`}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={() => onSelect(project.id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect(project.id);
+        }
+      }}
+    >
+      <div className="project-card-icon" aria-hidden="true"><FolderKanban size={20} /></div>
+      <div className="project-card-content">
+        <div className="project-card-heading">
+          <p className="row-title">{project.name}</p>
+          <span className={`chip ${selected ? "chip-verified" : "chip-pending"}`}>{selected ? "Selected" : project.status}</span>
+        </div>
+        <p className="project-card-id">{project.id}</p>
+        <p className="muted">{project.description || "No description"}</p>
       </div>
+      <span className="project-card-arrow" aria-hidden="true">›</span>
     </li>
   );
 }
@@ -53,7 +77,8 @@ function SourceRow({
   removeError?: string;
 }) {
   return (
-    <li key={source.id} className="row-item">
+    <li key={source.id} className="source-card">
+      <div className="source-card-icon" aria-hidden="true"><FileText size={19} /></div>
       <div className="row-text">
         <button
           type="button"
@@ -62,7 +87,7 @@ function SourceRow({
         >
           {source.name}
         </button>
-        <p className="muted">{source.type}</p>
+        <p className="muted source-meta"><span className="source-type-label">{source.type}</span></p>
         {removeError ? <p className="source-remove-error" role="alert">{removeError}</p> : null}
       </div>
       <button
@@ -221,11 +246,14 @@ function SourceDetailViewer({
 
 function KnowledgeRow({ item }: { item: KnowledgeItem }) {
   return (
-    <li key={item.id} className="row-item">
-      <span className={`row-icon tone-${item.status}`} />
+    <li key={item.id} className="knowledge-card">
+      <span className={`row-icon tone-${item.status}`} aria-hidden="true">
+        {item.status === "verified" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+      </span>
       <div className="row-text">
         <p className="row-title">{item.title}</p>
-        <p className="muted">{item.summary}</p>
+        <p className="muted knowledge-summary">{item.summary}</p>
+        <p className="knowledge-kind">{item.kind.replace(/_/g, " ")}</p>
       </div>
       <StatusChip status={item.status} />
     </li>
@@ -234,7 +262,8 @@ function KnowledgeRow({ item }: { item: KnowledgeItem }) {
 
 function HandoverRow({ handover }: { handover: Handover }) {
   return (
-    <li key={handover.id} className="row-item">
+    <li key={handover.id} className="handover-card">
+      <div className="handover-card-icon" aria-hidden="true"><FileText size={19} /></div>
       <div className="row-text">
         <p className="row-title">Handover {handover.version}</p>
         <p className="muted">
@@ -251,13 +280,19 @@ function HandoverRow({ handover }: { handover: Handover }) {
 
 function TeamRow({ user }: { user: { id: string; name: string; email: string } }) {
   return (
-    <li key={user.id} className="row-item">
+    <li key={user.id} className="team-card">
+      <div className="team-avatar" aria-hidden="true">{user.name.slice(0, 1).toUpperCase()}</div>
       <div className="row-text">
         <p className="row-title">{user.name}</p>
         <p className="muted">{user.email}</p>
       </div>
+      <Users size={17} className="team-card-icon" aria-hidden="true" />
     </li>
   );
+}
+
+function selectProject(projectId: string) {
+  publishProjectSelection(projectId);
 }
 
 export default function SectionPage({ params }: { params: Promise<SectionParams> }) {
@@ -292,26 +327,26 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
   }, [selectedProjectId]);
 
   useEffect(() => {
-  const syncSelectedProject = () => {
-    const storedProjectId = localStorage.getItem("handoveros-selected-project");
-    setSelectedProjectId(storedProjectId || null);
-  };
+    const syncSelectedProject = () => {
+      const storedProjectId = localStorage.getItem(PROJECT_STORAGE_KEY);
+      setSelectedProjectId(storedProjectId || null);
+    };
 
-  const handleProjectChange = (event: Event) => {
-    const customEvent = event as CustomEvent<{ projectId: string }>;
-    setSelectedProjectId(customEvent.detail.projectId);
-  };
+    const handleProjectChange = (event: Event) => {
+      const customEvent = event as CustomEvent<{ projectId?: string }>;
+      setSelectedProjectId(customEvent.detail?.projectId || null);
+    };
 
-  syncSelectedProject();
+    syncSelectedProject();
 
-  window.addEventListener("handoveros-project-change", handleProjectChange);
-  window.addEventListener("storage", syncSelectedProject);
+    window.addEventListener(PROJECT_CHANGE_EVENT, handleProjectChange);
+    window.addEventListener("storage", syncSelectedProject);
 
-  return () => {
-    window.removeEventListener("handoveros-project-change", handleProjectChange);
-    window.removeEventListener("storage", syncSelectedProject);
-  };
-}, []);
+    return () => {
+      window.removeEventListener(PROJECT_CHANGE_EVENT, handleProjectChange);
+      window.removeEventListener("storage", syncSelectedProject);
+    };
+  }, []);
 
   const config = section ? SECTIONS[section] : undefined;
 
@@ -363,10 +398,7 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
 
         if (section === "projects") {
           const response = await apiRequest<BackendProject[]>("/projects", token);
-          setProjects(response);
-          if (response.length > 0) {
-            setSelectedProjectId(response[0].id);
-          }
+          if (mounted) setProjects(deduplicateProjects(response));
         } else if (section === "sources" && selectedProjectId) {
           setSources([]);
           const response = await apiRequest<BackendSource[]>(`/sources/${selectedProjectId}`, token);
@@ -433,14 +465,14 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
               Create project
             </button>
           </div>
-          <ul className="rows">
+          <ul className="project-grid">
             {projects.length === 0 ? (
               <li className="row-item">
                 <p className="muted">No projects yet. Create a project to begin.</p>
               </li>
             ) : (
-              projects.map((p) => (
-                <ProjectRow key={p.id} project={p} onSelect={setSelectedProjectId} />
+                projects.map((p) => (
+                  <ProjectRow key={p.id} project={p} selected={p.id === selectedProjectId} onSelect={selectProject} />
               ))
             )}
           </ul>
@@ -463,7 +495,7 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
           {!selectedProjectId ? (
             <p className="muted">Select a project to view its sources.</p>
           ) : (
-            <ul className="rows">
+            <ul className="section-list source-list">
               {sources.length === 0 ? (
                 <li className="row-item">
                   <p className="muted">No sources for this project yet.</p>
@@ -507,7 +539,7 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
             knowledgeItems.length === 0 ? (
               <p className="muted">No findings yet. Connect a source and run reconstruction to begin.</p>
             ) : (
-              <ul className="rows">
+              <ul className="section-list knowledge-list">
                 {knowledgeItems.map((item) => <KnowledgeRow key={item.id} item={item} />)}
               </ul>
             )
@@ -534,7 +566,7 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
             handovers.length === 0 ? (
               <p className="muted">No handovers yet. Generate one after knowledge verification.</p>
             ) : (
-              <ul className="rows">
+              <ul className="section-list handover-list">
                 {handovers.map((h) => <HandoverRow key={h.id} handover={h} />)}
               </ul>
             )
@@ -555,7 +587,7 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
           {teamMembers.length === 0 ? (
             <p className="muted">No team members found.</p>
           ) : (
-            <ul className="rows">
+            <ul className="section-list team-list">
               {teamMembers.map((m) => <TeamRow key={m.id} user={m} />)}
             </ul>
           )}
@@ -567,13 +599,7 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
   };
 
   return (
-    <section className="card">
-      <div className="card-head">
-        <div>
-          <h1 className="card-title">{config.title}</h1>
-          <p className="muted">{config.subtitle}</p>
-        </div>
-      </div>
+    <section className={`card section-card section-${section}`}>
       {sectionContent()}
       {section === "sources" &&
         selectedProjectId &&

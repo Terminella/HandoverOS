@@ -2,39 +2,50 @@
 
 import { Bell, Leaf, LogOut, Search } from "lucide-react";
 import type { CurrentUser, Project } from "../../lib/types";
-import { useEffect, useState } from "react";
-import { apiRequest } from "../../lib/api";
-import { getStoredToken } from "../../lib/api";
+import { useEffect, useMemo, useState } from "react";
 import { clearToken } from "../../lib/auth";
-
-const PROJECT_STORAGE_KEY = "handoveros-selected-project";
+import {
+  PROJECT_CHANGE_EVENT,
+  PROJECT_STORAGE_KEY,
+  deduplicateProjects,
+  isKnownProject,
+  publishProjectSelection,
+} from "../../lib/project-selection";
 
 export default function Topbar({ projects, user }: { projects: Project[]; user: CurrentUser }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const uniqueProjects = useMemo(() => deduplicateProjects(projects), [projects]);
 
   useEffect(() => {
     const stored = typeof window !== "undefined"
       ? localStorage.getItem(PROJECT_STORAGE_KEY)
       : null;
-    if (stored && projects.some((p) => p.id === stored)) {
+    if (isKnownProject(uniqueProjects, stored)) {
       setSelectedProjectId(stored);
-    } else if (projects.length > 0) {
-      setSelectedProjectId(projects[0].id);
-      localStorage.setItem(PROJECT_STORAGE_KEY, projects[0].id);
+    } else if (uniqueProjects.length > 0) {
+      setSelectedProjectId(uniqueProjects[0].id);
+      localStorage.setItem(PROJECT_STORAGE_KEY, uniqueProjects[0].id);
     }
-  }, [projects]);
+  }, [uniqueProjects]);
+
+  useEffect(() => {
+    const handleProjectChange = (event: Event) => {
+      const { projectId } = (event as CustomEvent<{ projectId?: string }>).detail ?? {};
+      if (isKnownProject(uniqueProjects, projectId ?? null)) {
+        setSelectedProjectId(projectId ?? null);
+      }
+    };
+
+    window.addEventListener(PROJECT_CHANGE_EVENT, handleProjectChange);
+    return () => window.removeEventListener(PROJECT_CHANGE_EVENT, handleProjectChange);
+  }, [uniqueProjects]);
 
   function handleProjectChange(e: React.ChangeEvent<HTMLSelectElement>) {
-  const id = e.target.value;
-  setSelectedProjectId(id);
-  localStorage.setItem(PROJECT_STORAGE_KEY, id);
-  window.dispatchEvent(
-    new CustomEvent("handoveros-project-change", {
-      detail: { projectId: id },
-    })
-  );
-}
+    const id = e.target.value;
+    setSelectedProjectId(id);
+    publishProjectSelection(id);
+  }
 
   function handleLogout() {
     clearToken();
@@ -53,9 +64,9 @@ export default function Topbar({ projects, user }: { projects: Project[]; user: 
           value={selectedProjectId ?? ""}
           onChange={handleProjectChange}
           aria-label="Project"
-          disabled={projects.length === 0}
+          disabled={uniqueProjects.length === 0}
         >
-          {projects.map((p) => (
+          {uniqueProjects.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
             </option>
