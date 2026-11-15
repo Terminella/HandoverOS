@@ -416,6 +416,40 @@ class TestExtraction:
         assert captured_payload["stream"] is False
         assert "format" in captured_payload
 
+    def test_qwen35_disables_thinking_for_structured_output(self):
+        """Qwen 3.5 must return JSON in message.content, not thinking."""
+        config = _make_config(ollama_model="qwen3.5:4b", selection_mode="manual")
+        client = OllamaClient(config)
+        source = IntelligenceSource(
+            project_id="proj-1",
+            source_id="src-1",
+            source_type="document",
+            source_name="test.txt",
+            content="The team decided to use Python.",
+        )
+        valid_extraction = {
+            "schema_version": "1.0",
+            "project_id": "proj-1",
+            "claims": [],
+        }
+
+        captured_payload = {}
+
+        def fake_post(url, **kwargs):
+            captured_payload.update(kwargs.get("json", {}) or {})
+            response = MagicMock(spec=httpx.Response)
+            response.status_code = 200
+            response.json.return_value = {
+                "message": {"content": json.dumps(valid_extraction)}
+            }
+            response.raise_for_status = MagicMock()
+            return response
+
+        with patch.object(httpx, "post", side_effect=fake_post):
+            client.generate_extraction("proj-1", [source], 30)
+
+        assert captured_payload["think"] is False
+
     def test_different_model_names_work(self):
         """Different model names should work without source code changes."""
         config = _make_config(ollama_model=None, selection_mode="auto")
