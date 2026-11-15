@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -11,7 +12,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.types import JSON
 from typing import Optional, Any
 
@@ -73,13 +74,28 @@ class ProjectMember(Base):
     __tablename__ = "project_members"
     __table_args__ = (
         UniqueConstraint("project_id", "user_id", name="uq_project_member"),
+        CheckConstraint(
+            "role IN ('owner', 'editor', 'viewer')",
+            name="ck_project_member_role",
+        ),
     )
+
+    ALLOWED_ROLES = {"owner", "editor", "viewer"}
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     role: Mapped[str] = mapped_column(String(30), default="viewer")
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    @validates("role")
+    def validate_role(self, key: str, value: str) -> str:
+        if value not in self.ALLOWED_ROLES:
+            raise ValueError(
+                f"Invalid project role: {value}. "
+                f"Allowed roles: {', '.join(sorted(self.ALLOWED_ROLES))}"
+            )
+        return value
 
     project = relationship("Project", back_populates="members")
     user = relationship("User", back_populates="memberships")
