@@ -178,7 +178,7 @@ export default function SourceUploadPage() {
   const supportedList = SUPPORTED_EXTENSIONS.join(", ").toUpperCase();
 
   return (
-    <section className="card">
+    <section className="card section-card section-source-upload">
       <div className="card-head">
         <div>
           <h1 className="card-title">Upload Sources</h1>
@@ -218,16 +218,11 @@ export default function SourceUploadPage() {
         </div>
       </div>
 
-      <label className="project-label">
-        Project ID
-        <input
-          type="text"
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-          placeholder="Enter project ID"
-          required
-        />
-      </label>
+      <p className="muted">
+        {projectId
+          ? `Using the selected Topbar project (ID: ${projectId}).`
+          : "Select a project in the Topbar to upload sources."}
+      </p>
 
       {files.length > 0 && (
         <ul className="rows">

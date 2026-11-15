@@ -102,9 +102,13 @@ class OllamaClient:
             raise RuntimeError(
                 f"Ollama returned HTTP {exc.response.status_code}"
             ) from exc
+        except httpx.TimeoutException as exc:
+            raise RuntimeError(
+                "Ollama request timed out."
+            ) from exc
         except httpx.RequestError as exc:
             raise RuntimeError(
-                f"Ollama request failed: {exc}"
+                "Ollama request failed. Check that the Ollama service is reachable."
             ) from exc
 
         try:
@@ -299,6 +303,14 @@ class OllamaClient:
             },
         }
 
+        # Qwen 3.5 enables reasoning by default.  Ollama places the
+        # reasoning in ``message.thinking`` and leaves ``message.content``
+        # empty unless thinking is disabled, which makes structured output
+        # impossible to parse.  Keep the default payload unchanged for other
+        # model families because ``think`` is not universal across Ollama.
+        if model.lower().startswith("qwen3.5"):
+            payload["think"] = False
+
         try:
             response = httpx.post(
                 f"{self.base_url}/api/chat",
@@ -320,14 +332,14 @@ class OllamaClient:
 
         except httpx.HTTPStatusError as exc:
             raise RuntimeError(
-                f"Ollama returned HTTP "
-                f"{exc.response.status_code}: "
-                f"{exc.response.text[:500]}"
+                "Configured Ollama model is unavailable."
+                if exc.response.status_code == 404
+                else f"Ollama returned HTTP {exc.response.status_code} while generating structured output."
             ) from exc
 
         except httpx.RequestError as exc:
             raise RuntimeError(
-                f"Ollama request failed: {exc}"
+                "Ollama request failed. Check that the Ollama service is reachable."
             ) from exc
 
         try:

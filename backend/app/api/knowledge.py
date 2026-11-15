@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 import uuid
+import logging
 
 from data_engineering.storage.database import get_db
 from app.core.authorization import require_project_role
@@ -26,6 +27,8 @@ router = APIRouter(
     prefix="/knowledge",
     tags=["Knowledge"]
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ReconstructRequest(BaseModel):
@@ -93,11 +96,22 @@ def reconstruct_project_knowledge(
 
     require_project_role(db, project_id, user_id, ("owner", "editor"))
 
-    sources = db.scalars(
-        select(Source).where(
-            Source.project_id == project_id
+    try:
+        sources = db.scalars(
+            select(Source).where(
+                Source.project_id == project_id
+            )
+        ).all()
+    except Exception as exc:
+        db.rollback()
+        logger.error(
+            "Source retrieval failed during reconstruction (%s)",
+            type(exc).__name__,
         )
-    ).all()
+        raise HTTPException(
+            status_code=503,
+            detail="Source retrieval failed. Please retry the reconstruction.",
+        ) from exc
 
     if not sources:
         raise HTTPException(
@@ -116,14 +130,73 @@ def reconstruct_project_knowledge(
         pipeline = IntelligencePipeline()
         result = pipeline.run(source_records)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc)
-        ) from exc
+        message = str(exc)
+        lower_message = message.lower()
+        if any(
+            marker in lower_message
+            for marker in (
+                "invalid extraction",
+                "incorrect project_id",
+                "unknown source id",
+                "another project",
+                "maximum claim count",
+            )
+        ):
+            logger.warning(
+                "LLM output failed validation (%s)",
+                type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "The AI provider returned invalid structured output. "
+                    "No knowledge was saved; retry or choose another model."
+                ),
+            ) from exc
+        raise HTTPException(status_code=400, detail=message) from exc
+    except RuntimeError as exc:
+        lower_message = str(exc).lower()
+        if "could not connect" in lower_message or "request timed out" in lower_message:
+            detail = (
+                "AI provider connection failed. Check that Ollama is running "
+                "and reachable, then retry."
+            )
+            status_code = 503
+        elif (
+            "no local ollama models" in lower_message
+            or "not installed locally" in lower_message
+            or "model is unavailable" in lower_message
+            or "model not found" in lower_message
+        ):
+            detail = (
+                "The configured AI model is unavailable. Select an installed "
+                "Ollama model in Settings and retry."
+            )
+            status_code = 503
+        elif "invalid extraction response" in lower_message:
+            detail = (
+                "The AI provider returned invalid structured output. "
+                "No knowledge was saved; retry or choose another model."
+            )
+            status_code = 502
+        else:
+            detail = "Intelligence processing failed. Check the AI provider configuration and retry."
+            status_code = 502
+
+        logger.warning(
+            "Intelligence pipeline failed (%s)",
+            type(exc).__name__,
+        )
+        raise HTTPException(status_code=status_code, detail=detail) from exc
     except Exception as exc:
+        db.rollback()
+        logger.exception(
+            "Unexpected intelligence pipeline failure (%s)",
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"Intelligence pipeline failed: {exc}"
+            detail="Intelligence processing failed. Please retry.",
         ) from exc
 
     knowledge_items = []
