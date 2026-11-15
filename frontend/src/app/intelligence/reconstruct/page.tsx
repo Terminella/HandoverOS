@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiPost, getStoredToken } from "../../../lib/api";
 
 const PROJECT_STORAGE_KEY = "handoveros-selected-project";
@@ -17,6 +17,7 @@ export default function ReconstructPage() {
     knowledge_items_created: number;
     message: string;
   } | null>(null);
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     const syncProject = () => {
@@ -44,6 +45,8 @@ export default function ReconstructPage() {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (submittingRef.current || loading || !projectId.trim()) return;
+    submittingRef.current = true;
     setError("");
     setLoading(true);
     setResult(null);
@@ -62,12 +65,13 @@ export default function ReconstructPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Reconstruction failed.");
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   }
 
   return (
-    <section className="card">
+    <section className="card section-card section-reconstruct">
       <div className="card-head">
         <div>
           <h1 className="card-title">Knowledge Reconstruction</h1>
