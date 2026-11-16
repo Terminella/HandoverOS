@@ -260,20 +260,40 @@ function KnowledgeRow({ item }: { item: KnowledgeItem }) {
   );
 }
 
-function HandoverRow({ handover }: { handover: Handover }) {
+function HandoverRow({
+  handover,
+  onSelect,
+}: {
+  handover: Handover;
+  onSelect: (id: string) => void;
+}) {
   return (
-    <li key={handover.id} className="handover-card">
+    <li
+      key={handover.id}
+      className="handover-card"
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelect(handover.id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect(handover.id);
+        }
+      }}
+      aria-label={`Open Handover ${handover.version}`}
+    >
       <div className="handover-card-icon" aria-hidden="true"><FileText size={19} /></div>
       <div className="row-text">
         <p className="row-title">Handover {handover.version}</p>
         <p className="muted">
-          {handover.status} &middot; prepared by {handover.preparedBy} &middot;
+          {handover.status} &middot; prepared by {handover.preparedBy} &middot;{" "}
           {handover.generatedAt}
         </p>
       </div>
       <span className={`chip chip-${handover.status}`}>
         {handover.status.replace(/_/g, " ")}
       </span>
+      <span className="handover-card-arrow" aria-hidden="true">→</span>
     </li>
   );
 }
@@ -567,7 +587,13 @@ export default function SectionPage({ params }: { params: Promise<SectionParams>
               <p className="muted">No handovers yet. Generate one after knowledge verification.</p>
             ) : (
               <ul className="section-list handover-list">
-                {handovers.map((h) => <HandoverRow key={h.id} handover={h} />)}
+                {handovers.map((h) => (
+                  <HandoverRow
+                    key={h.id}
+                    handover={h}
+                    onSelect={(id) => router.push(`/handovers/${encodeURIComponent(id)}`)}
+                  />
+                ))}
               </ul>
             )
           )}
