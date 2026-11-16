@@ -29,8 +29,10 @@ class IntelligencePipeline:
 
         self.settings = settings
 
-        if client is None:
-            client = create_llm_client(settings)
+        client = create_llm_client(
+            settings,
+            resolved_client=client,
+        )
 
         self.extractor = KnowledgeExtractor(
             client=client,
