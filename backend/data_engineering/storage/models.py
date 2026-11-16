@@ -48,6 +48,9 @@ class User(Base):
 
     memberships = relationship("ProjectMember", back_populates="user")
     owned_projects = relationship("Project", back_populates="owner")
+    initiated_runs = relationship("ReconstructionRun", back_populates="initiator")
+    reviews = relationship("FindingReview", back_populates="reviewer")
+    conversations = relationship("Conversation", back_populates="user")
 
 
 # 2. Projects
@@ -67,6 +70,9 @@ class Project(Base):
     activities = relationship("Activity", back_populates="project", cascade="all, delete-orphan")
     knowledge_items = relationship("KnowledgeItem", back_populates="project", cascade="all, delete-orphan")
     handovers = relationship("Handover", back_populates="project", cascade="all, delete-orphan")
+    reconstruction_runs = relationship("ReconstructionRun", back_populates="project", cascade="all, delete-orphan")
+    conversations = relationship("Conversation", back_populates="project", cascade="all, delete-orphan")
+    context_snapshots = relationship("ProjectContextSnapshot", back_populates="project", cascade="all, delete-orphan")
 
 
 # 3. Project Members
@@ -126,6 +132,54 @@ class Source(Base):
     project = relationship("Project", back_populates="sources")
     activities = relationship("Activity", back_populates="source")
     evidence_links = relationship("EvidenceLink", back_populates="source")
+    run_sources = relationship("RunSource", back_populates="source")
+
+
+# 5. Reconstruction runs
+class ReconstructionRun(Base):
+    __tablename__ = "reconstruction_runs"
+    __table_args__ = (
+        UniqueConstraint("project_id", "idempotency_key", name="uq_reconstruction_run_idempotency"),
+        Index("ix_reconstruction_runs_project_created", "project_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    initiated_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="completed")
+    source_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_fingerprint: Mapped[str | None] = mapped_column(String(128))
+    provider: Mapped[str | None] = mapped_column(String(80))
+    model: Mapped[str | None] = mapped_column(String(255))
+    idempotency_key: Mapped[str | None] = mapped_column(String(255))
+    result_counts: Mapped[dict] = mapped_column(JSON, default=dict)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    project = relationship("Project", back_populates="reconstruction_runs")
+    initiator = relationship("User", back_populates="initiated_runs")
+    sources = relationship("RunSource", back_populates="run", cascade="all, delete-orphan")
+    findings = relationship("KnowledgeItem", back_populates="run")
+
+
+class RunSource(Base):
+    __tablename__ = "run_sources"
+    __table_args__ = (
+        UniqueConstraint("run_id", "source_id", name="uq_run_source"),
+        Index("ix_run_sources_source", "source_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    run_id: Mapped[str] = mapped_column(ForeignKey("reconstruction_runs.id", ondelete="CASCADE"), nullable=False)
+    source_id: Mapped[str] = mapped_column(ForeignKey("sources.id"), nullable=False)
+    source_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_fingerprint: Mapped[str | None] = mapped_column(String(128))
+
+    run = relationship("ReconstructionRun", back_populates="sources")
+    source = relationship("Source", back_populates="run_sources")
 
 
 # 5. Activities
@@ -158,12 +212,56 @@ class KnowledgeItem(Base):
     status: Mapped[str] = mapped_column(String(50), default="identified")
     confidence: Mapped[str] = mapped_column(String(30), default="unknown")
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("reconstruction_runs.id"), nullable=True, index=True)
+    claim_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    review_status: Mapped[str] = mapped_column(String(30), nullable=False, default="unreviewed")
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_note: Mapped[str | None] = mapped_column(Text)
     owner: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     project = relationship("Project", back_populates="knowledge_items")
     evidence_links = relationship("EvidenceLink", back_populates="knowledge_item", cascade="all, delete-orphan")
     handover_items = relationship("HandoverItem", back_populates="knowledge_item")
+    run = relationship("ReconstructionRun", back_populates="findings")
+    reviews = relationship("FindingReview", back_populates="finding", cascade="all, delete-orphan")
+
+
+class FindingReview(Base):
+    __tablename__ = "finding_reviews"
+    __table_args__ = (Index("ix_finding_reviews_finding_created", "finding_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    finding_id: Mapped[str] = mapped_column(ForeignKey("knowledge_items.id", ondelete="CASCADE"), nullable=False)
+    reviewer_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    previous_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    previous_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    new_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    reviewer_note: Mapped[str | None] = mapped_column(Text)
+    corrected_content: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    finding = relationship("KnowledgeItem", back_populates="reviews")
+    reviewer = relationship("User", back_populates="reviews")
+
+
+class FindingContradiction(Base):
+    __tablename__ = "finding_contradictions"
+    __table_args__ = (Index("ix_finding_contradictions_run", "run_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    run_id: Mapped[str] = mapped_column(ForeignKey("reconstruction_runs.id", ondelete="CASCADE"), nullable=False)
+    claim_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    source_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    requires_human_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    run = relationship("ReconstructionRun")
 
 
 # 7. Evidence Links
@@ -241,6 +339,58 @@ class AuditLog(Base):
     resource_id: Mapped[str | None] = mapped_column(String(36))
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+    __table_args__ = (Index("ix_conversations_project_updated", "project_id", "updated_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    context_version: Mapped[str | None] = mapped_column(String(128))
+    source_fingerprint: Mapped[str | None] = mapped_column(String(128))
+    approved_knowledge_fingerprint: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    project = relationship("Project", back_populates="conversations")
+    user = relationship("User", back_populates="conversations")
+    messages = relationship("ConversationMessage", back_populates="conversation", cascade="all, delete-orphan")
+
+
+class ConversationMessage(Base):
+    __tablename__ = "conversation_messages"
+    __table_args__ = (Index("ix_conversation_messages_conversation_created", "conversation_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    context_version: Mapped[str | None] = mapped_column(String(128))
+    citation_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    conversation = relationship("Conversation", back_populates="messages")
+
+
+class ProjectContextSnapshot(Base):
+    __tablename__ = "project_context_snapshots"
+    __table_args__ = (
+        UniqueConstraint("project_id", "context_version", name="uq_project_context_version"),
+        Index("ix_context_snapshots_project_created", "project_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    context_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_fingerprint: Mapped[str | None] = mapped_column(String(128))
+    approved_knowledge_fingerprint: Mapped[str | None] = mapped_column(String(128))
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    project = relationship("Project", back_populates="context_snapshots")
 
 # 12. User Sessions
 class UserSession(Base):

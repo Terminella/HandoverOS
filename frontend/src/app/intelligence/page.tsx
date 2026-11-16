@@ -1,485 +1,68 @@
 "use client";
 
 import Link from "next/link";
-import {
-  ArrowRight,
-  CheckCircle2,
-  FileText,
-  FolderKanban,
-  History,
-  MessageSquareText,
-  ShieldAlert,
-  Sparkles,
-  TriangleAlert,
-} from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import StatTiles from "../../components/dashboard/StatTiles";
-import StatusChip from "../../components/ui/StatusChip";
-import { apiRequest, getLlmStatus, getStoredToken } from "../../lib/api";
-import { computeMetrics, countKind } from "../../lib/metrics";
-import {
-  PROJECT_CHANGE_EVENT,
-  PROJECT_STORAGE_KEY,
-  deduplicateProjects,
-} from "../../lib/project-selection";
-import type {
-  BackendKnowledgeItem,
-  BackendProject,
-  BackendSource,
-  KnowledgeItem,
-  LlmStatus,
-  Source,
-} from "../../lib/types";
-import {
-  mapBackendKnowledgeItem,
-  mapBackendSource,
-} from "../../lib/types";
+import { ArrowRight, CheckCircle2, FileText, MessageSquareText, RefreshCw, Sparkles, TriangleAlert } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { apiRequest, createIntelligenceRun, getIntelligenceFinding, getIntelligenceFindings, getLlmStatus, getStoredToken, reviewIntelligenceFinding, sendIntelligenceChat } from "../../lib/api";
+import { PROJECT_CHANGE_EVENT, PROJECT_STORAGE_KEY, deduplicateProjects } from "../../lib/project-selection";
+import type { BackendHandover, BackendProject, BackendSource, FindingReviewAction, IntelligenceFinding, IntelligenceRun, LlmStatus, Source } from "../../lib/types";
+import { mapBackendSource } from "../../lib/types";
 
-function CapabilityCard({
-  icon: Icon,
-  title,
-  description,
-}: {
-  icon: typeof History;
-  title: string;
-  description: string;
-}) {
-  return (
-    <li className="knowledge-card">
-      <span className="row-icon tone-pending" aria-hidden="true">
-        <Icon size={19} />
-      </span>
-      <div className="row-text">
-        <p className="row-title">{title}</p>
-        <p className="muted">{description}</p>
-      </div>
-      <span className="chip chip-pending">Not available</span>
-    </li>
-  );
-}
+type ChatMessage = { role: "user" | "assistant"; content: string; citations?: string[]; support?: string };
+const label = (value: string) => value.replace(/_/g, " ");
+const statusClass = (status: string) => status === "approved" || status === "verified" || status === "completed" ? "chip chip-verified" : status === "rejected" || status === "failed" ? "chip chip-conflicting" : "chip chip-pending";
 
-function SourceRow({ source }: { source: Source }) {
-  return (
-    <li className="source-card">
-      <div className="source-card-icon" aria-hidden="true">
-        <FileText size={19} />
-      </div>
-      <div className="row-text">
-        <p className="row-title">{source.name}</p>
-        <p className="muted source-meta">
-          <span className="source-type-label">{source.type}</span>
-        </p>
-      </div>
-      <Link href="/sources" className="source-view-button">
-        Manage sources
-      </Link>
-    </li>
-  );
-}
-
-function KnowledgeRow({ item }: { item: KnowledgeItem }) {
-  const humanReview = item.reviewed ? "Recorded" : "Not reviewed";
-
-  return (
-    <li className="knowledge-card">
-      <span
-        className={`row-icon tone-${item.status}`}
-        aria-hidden="true"
-      >
-        {item.status === "verified" ? (
-          <CheckCircle2 size={18} />
-        ) : (
-          <TriangleAlert size={18} />
-        )}
-      </span>
-      <div className="row-text">
-        <p className="row-title">{item.title}</p>
-        <p className="muted knowledge-summary">{item.summary}</p>
-        <p className="knowledge-kind">
-          {item.kind.replace(/_/g, " ")} · {item.sourceIds.length} evidence reference
-          {item.sourceIds.length === 1 ? "" : "s"}
-        </p>
-        <p className="muted" style={{ marginTop: 5 }}>
-          Human review: {humanReview}
-        </p>
-      </div>
-      <StatusChip status={item.status} />
-    </li>
-  );
+function FindingDetail({ finding, onClose, onReviewed }: { finding: IntelligenceFinding; onClose: () => void; onReviewed: (finding: IntelligenceFinding) => void }) {
+  const [action, setAction] = useState<FindingReviewAction | null>(null);
+  const [note, setNote] = useState("");
+  const [correctedContent, setCorrectedContent] = useState(finding.content);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const token = getStoredToken() ?? undefined;
+  async function submitReview(event: FormEvent) {
+    event.preventDefault(); if (!action || busy) return; setBusy(true); setError(null);
+    try {
+      const updated = await reviewIntelligenceFinding(finding.id, { action, reviewer_note: note.trim() || null, corrected_content: action === "correct" ? correctedContent.trim() : null, expected_version: finding.version }, token);
+      onReviewed(updated); setAction(null); setNote("");
+    } catch (err) { setError(err instanceof Error ? err.message : "Review could not be saved. Refresh and try again."); } finally { setBusy(false); }
+  }
+  return <section className="card" aria-label={`Finding details for ${finding.title}`}>
+    <div className="card-head"><div><p className="eyebrow">Finding detail</p><h3 className="card-title">{finding.title}</h3></div><button type="button" className="link-btn" onClick={onClose}>Close</button></div>
+    <p>{finding.content}</p><p className="muted">Category: {label(finding.category)} · Confidence: {finding.confidence == null ? "Not reported" : `${Math.round(finding.confidence * 100)}%`}</p>
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}><span className={statusClass(finding.verification_status)}>Evidence: {label(finding.verification_status)}</span><span className={statusClass(finding.review_status)}>Human review: {label(finding.review_status)}</span><span className="chip chip-pending">Version {finding.version}</span></div>
+    <h4>Evidence</h4>{finding.evidence.length === 0 ? <p className="muted">No evidence references were returned.</p> : <ul className="rows">{finding.evidence.map((evidence) => <li className="row-item" key={evidence.id}><div className="row-text"><p className="row-title">{evidence.source_name || evidence.source_identifier || evidence.source_id}</p><p className="muted">{evidence.quote}</p></div></li>)}</ul>}
+    {finding.contradictions.length > 0 && <><h4>Contradictions</h4><ul className="rows">{finding.contradictions.map((item) => <li className="row-item" key={item.id}><div className="row-text"><p className="row-title">{item.explanation}</p><p className="muted">Human review required: {item.requires_human_review ? "Yes" : "No"}</p></div></li>)}</ul></>}
+    <form onSubmit={submitReview} style={{ marginTop: 18 }}><h4>Review</h4><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{(["approve", "reject", "correct", "request_clarification"] as FindingReviewAction[]).map((option) => <button type="button" key={option} className={action === option ? "auth-button" : "link-btn"} onClick={() => setAction(option)} disabled={busy}>{label(option)}</button>)}</div>{action && <>{action === "correct" && <textarea aria-label="Corrected finding content" value={correctedContent} onChange={(event) => setCorrectedContent(event.target.value)} rows={4} style={{ width: "100%", marginTop: 10 }} />}<textarea aria-label="Reviewer note" placeholder="Optional reviewer note" value={note} onChange={(event) => setNote(event.target.value)} rows={3} style={{ width: "100%", marginTop: 10 }} /><button className="auth-button" type="submit" disabled={busy || (action === "correct" && !correctedContent.trim())}>{busy ? "Saving..." : `Confirm ${label(action)}`}</button></>}</form>
+    {finding.review_history && finding.review_history.length > 0 && <><h4>Review history</h4><ul className="rows">{finding.review_history.map((entry) => <li className="row-item" key={entry.id}><div className="row-text"><p className="row-title">{label(entry.action)} · {entry.previous_status} → {entry.new_status}</p><p className="muted">{entry.reviewer_note || "No note"} · {new Date(entry.created_at).toLocaleString()}</p></div></li>)}</ul></>}
+    {error && <p className="auth-error" role="alert">{error}</p>}
+  </section>;
 }
 
 export default function IntelligenceWorkspacePage() {
-  const [projects, setProjects] = useState<BackendProject[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [sources, setSources] = useState<Source[]>([]);
-  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
-  const [llmStatus, setLlmStatus] = useState<LlmStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [projectDataLoading, setProjectDataLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [projectDataError, setProjectDataError] = useState<string | null>(null);
-  const [llmStatusError, setLlmStatusError] = useState<string | null>(null);
+  const [projects, setProjects] = useState<BackendProject[]>([]); const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null); const [sources, setSources] = useState<Source[]>([]); const [findings, setFindings] = useState<IntelligenceFinding[]>([]); const [handover, setHandover] = useState<BackendHandover | null>(null); const [run, setRun] = useState<IntelligenceRun | null>(null); const [llm, setLlm] = useState<LlmStatus | null>(null); const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set()); const [selectedFinding, setSelectedFinding] = useState<IntelligenceFinding | null>(null); const [loading, setLoading] = useState(true); const [dataLoading, setDataLoading] = useState(false); const [error, setError] = useState<string | null>(null); const [dataError, setDataError] = useState<string | null>(null); const [runError, setRunError] = useState<string | null>(null); const [running, setRunning] = useState(false); const [chatInput, setChatInput] = useState(""); const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]); const [conversationId, setConversationId] = useState<string | null>(null); const [chatBusy, setChatBusy] = useState(false); const [chatError, setChatError] = useState<string | null>(null); const runningRef = useRef(false); const token = getStoredToken() ?? undefined;
 
-  const token = getStoredToken() ?? undefined;
+  useEffect(() => { const sync = () => setSelectedProjectId(localStorage.getItem(PROJECT_STORAGE_KEY)); const onChange = (event: Event) => setSelectedProjectId((event as CustomEvent<{ projectId?: string }>).detail?.projectId || null); sync(); window.addEventListener(PROJECT_CHANGE_EVENT, onChange); window.addEventListener("storage", sync); return () => { window.removeEventListener(PROJECT_CHANGE_EVENT, onChange); window.removeEventListener("storage", sync); }; }, []);
+  useEffect(() => { let active = true; apiRequest<BackendProject[]>("/projects", token).then((items) => { if (!active) return; const available = deduplicateProjects(items); setProjects(available); const stored = localStorage.getItem(PROJECT_STORAGE_KEY); if (stored && available.some((item) => item.id === stored)) setSelectedProjectId(stored); }).catch((err) => active && setError(err instanceof Error ? err.message : "Unable to load projects.")).finally(() => active && setLoading(false)); return () => { active = false; }; }, [token]);
+  useEffect(() => { let active = true; setRun(null); setSelectedFinding(null); setSelectedSourceIds(new Set()); setConversationId(null); setChatMessages([]); setDataError(null); if (!selectedProjectId) { setSources([]); setFindings([]); setHandover(null); return; } setDataLoading(true); Promise.all([apiRequest<BackendSource[]>(`/sources/${encodeURIComponent(selectedProjectId)}`, token), getIntelligenceFindings(selectedProjectId, token), apiRequest<BackendHandover[]>(`/handovers/${encodeURIComponent(selectedProjectId)}`, token)]).then(([sourceResponse, findingResponse, handovers]) => { if (!active) return; setSources(sourceResponse.map(mapBackendSource)); setFindings(findingResponse); setHandover(handovers[0] ?? null); }).catch((err) => active && setDataError(err instanceof Error ? err.message : "Unable to load Intelligence data.")).finally(() => active && setDataLoading(false)); return () => { active = false; }; }, [selectedProjectId, token]);
+  useEffect(() => { getLlmStatus(token).then(setLlm).catch(() => setLlm(null)); }, [token]);
 
-  useEffect(() => {
-    const syncSelectedProject = () => {
-      setSelectedProjectId(localStorage.getItem(PROJECT_STORAGE_KEY));
-    };
+  const project = useMemo(() => projects.find((item) => item.id === selectedProjectId) ?? null, [projects, selectedProjectId]); const approved = findings.filter((item) => item.review_status === "approved").length; const awaitingReview = findings.filter((item) => item.review_status === "unreviewed" || item.review_status === "clarification_required").length; const rejected = findings.filter((item) => item.review_status === "rejected").length; const contradictions = findings.reduce((total, item) => total + item.contradictions.length, 0); const ready = findings.length > 0 && awaitingReview === 0 && rejected === 0 && contradictions === 0; const groups = useMemo(() => findings.reduce<Record<string, IntelligenceFinding[]>>((result, item) => { (result[item.category] ||= []).push(item); return result; }, {}), [findings]);
+  function toggleSource(id: string) { setSelectedSourceIds((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; }); }
+  function refreshFindings() { if (!selectedProjectId) return; getIntelligenceFindings(selectedProjectId, token).then(setFindings).catch((err) => setDataError(err instanceof Error ? err.message : "Unable to refresh findings.")); }
+  async function runReconstruction() { if (!selectedProjectId || selectedSourceIds.size === 0 || runningRef.current) return; runningRef.current = true; setRunning(true); setRunError(null); const key = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `intelligence-${Date.now()}`; try { const result = await createIntelligenceRun(selectedProjectId, [...selectedSourceIds], key, token); setRun(result); if (result.status === "completed") refreshFindings(); if (result.status === "failed") setRunError(result.error?.message || "Reconstruction failed."); } catch (err) { setRunError(err instanceof Error ? err.message : "Reconstruction could not be started."); } finally { runningRef.current = false; setRunning(false); } }
+  async function openFinding(finding: IntelligenceFinding) { try { setSelectedFinding(await getIntelligenceFinding(finding.id, token)); } catch (err) { setDataError(err instanceof Error ? err.message : "Unable to load finding details."); } }
+  function updateFinding(updated: IntelligenceFinding) { setFindings((current) => current.map((item) => item.id === updated.id ? updated : item)); setSelectedFinding(updated); }
+  async function sendChat(event: FormEvent) { event.preventDefault(); const message = chatInput.trim(); if (!selectedProjectId || !message || chatBusy) return; setChatInput(""); setChatError(null); setChatMessages((current) => [...current, { role: "user" as const, content: message }].slice(-20)); setChatBusy(true); try { const response = await sendIntelligenceChat(selectedProjectId, { message, conversation_id: conversationId, source_ids: selectedSourceIds.size ? [...selectedSourceIds] : null, run_id: run?.run_id ?? null }, token); setConversationId(response.conversation_id); setChatMessages((current) => [...current, { role: "assistant" as const, content: response.answer, citations: response.citations, support: response.support }].slice(-20)); } catch (err) { setChatError(err instanceof Error ? err.message : "Chat is unavailable."); } finally { setChatBusy(false); } }
 
-    const handleProjectChange = (event: Event) => {
-      const customEvent = event as CustomEvent<{ projectId?: string }>;
-      setSelectedProjectId(customEvent.detail?.projectId || null);
-    };
-
-    syncSelectedProject();
-    window.addEventListener(PROJECT_CHANGE_EVENT, handleProjectChange);
-    window.addEventListener("storage", syncSelectedProject);
-
-    return () => {
-      window.removeEventListener(PROJECT_CHANGE_EVENT, handleProjectChange);
-      window.removeEventListener("storage", syncSelectedProject);
-    };
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadProjects() {
-      try {
-        setLoading(true);
-        setError(null);
-        const response = await apiRequest<BackendProject[]>("/projects", token);
-        if (!mounted) return;
-
-        const availableProjects = deduplicateProjects(response);
-        setProjects(availableProjects);
-
-        const storedProjectId = localStorage.getItem(PROJECT_STORAGE_KEY);
-        if (
-          !storedProjectId ||
-          !availableProjects.some((project) => project.id === storedProjectId)
-        ) {
-          setSelectedProjectId(null);
-        }
-      } catch (err) {
-        if (mounted) {
-          setError(err instanceof Error ? err.message : "Unable to load projects.");
-        }
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-
-    loadProjects();
-    return () => {
-      mounted = false;
-    };
-  }, [token]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadProjectData() {
-      if (!selectedProjectId) {
-        setSources([]);
-        setKnowledgeItems([]);
-        setProjectDataError(null);
-        setProjectDataLoading(false);
-        return;
-      }
-
-      try {
-        setProjectDataLoading(true);
-        setProjectDataError(null);
-        setSources([]);
-        setKnowledgeItems([]);
-
-        const [sourceResponse, knowledgeResponse] = await Promise.all([
-          apiRequest<BackendSource[]>(
-            `/sources/${encodeURIComponent(selectedProjectId)}`,
-            token,
-          ),
-          apiRequest<BackendKnowledgeItem[]>(
-            `/knowledge/${encodeURIComponent(selectedProjectId)}`,
-            token,
-          ),
-        ]);
-
-        if (mounted) {
-          setSources(sourceResponse.map(mapBackendSource));
-          setKnowledgeItems(knowledgeResponse.map(mapBackendKnowledgeItem));
-        }
-      } catch (err) {
-        if (mounted) {
-          setProjectDataError(
-            err instanceof Error
-              ? err.message
-              : "Unable to load this project’s Intelligence data.",
-          );
-        }
-      } finally {
-        if (mounted) setProjectDataLoading(false);
-      }
-    }
-
-    loadProjectData();
-    return () => {
-      mounted = false;
-    };
-  }, [selectedProjectId, token]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadModelStatus() {
-      try {
-        setLlmStatusError(null);
-        const response = await getLlmStatus(token);
-        if (mounted) setLlmStatus(response);
-      } catch (err) {
-        if (mounted) {
-          setLlmStatus(null);
-          setLlmStatusError(
-            err instanceof Error ? err.message : "Model status is unavailable.",
-          );
-        }
-      }
-    }
-
-    loadModelStatus();
-    return () => {
-      mounted = false;
-    };
-  }, [token]);
-
-  const project = useMemo(
-    () => projects.find((candidate) => candidate.id === selectedProjectId) ?? null,
-    [projects, selectedProjectId],
-  );
-  const metrics = computeMetrics(knowledgeItems);
-
-  if (loading) {
-    return (
-      <section className="card placeholder" role="status" aria-live="polite">
-        <h1 className="card-title">Loading Intelligence workspace...</h1>
-        <p className="muted">Connecting to HandoverOS project data.</p>
-      </section>
-    );
-  }
-
-  if (error) {
-    return (
-      <section className="card placeholder" role="alert">
-        <h1 className="card-title">Unable to load Intelligence workspace</h1>
-        <p className="muted">{error}</p>
-      </section>
-    );
-  }
-
-  if (projects.length === 0) {
-    return (
-      <section className="card placeholder">
-        <h1 className="card-title">No projects available</h1>
-        <p className="muted">Create or join a project before opening Intelligence.</p>
-        <Link href="/projects" className="action-btn">
-          View projects
-        </Link>
-      </section>
-    );
-  }
-
-  if (!project) {
-    return (
-      <section className="card placeholder">
-        <h1 className="card-title">Select a project</h1>
-        <p className="muted">
-          Choose a project in the Topbar to view its sources and extracted knowledge.
-        </p>
-        <Link href="/projects" className="action-btn">
-          Choose project
-        </Link>
-      </section>
-    );
-  }
-
-  return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <section className="card section-card" aria-labelledby="intelligence-title">
-        <div className="card-head">
-          <div>
-            <p className="eyebrow">Project Intelligence</p>
-            <h1 id="intelligence-title" className="card-title">
-              {project.name}
-            </h1>
-            <p className="muted">
-              Review the project’s existing sources and extracted knowledge.
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Link href="/intelligence/reconstruct" className="action-btn">
-              <Sparkles size={16} aria-hidden="true" />
-              Reconstruct
-            </Link>
-            <Link href="/handovers/create" className="action-btn">
-              Prepare handover
-              <ArrowRight size={16} aria-hidden="true" />
-            </Link>
-          </div>
-        </div>
-
-        <nav className="settings-tabs" aria-label="Intelligence workspace sections">
-          <a className="tab-btn tab-active" href="#overview">Overview</a>
-          <a className="tab-btn" href="#sources">Sources</a>
-          <a className="tab-btn" href="#knowledge">Knowledge</a>
-          <a className="tab-btn" href="#reconstruction">Reconstruction</a>
-          <a className="tab-btn" href="#handover">Handover</a>
-        </nav>
-      </section>
-
-      <section id="overview" aria-labelledby="overview-title">
-        <div className="card-head">
-          <div>
-            <h2 id="overview-title" className="card-title">Overview</h2>
-            <p className="muted">Current project data available through the existing APIs.</p>
-          </div>
-        </div>
-
-        {projectDataLoading ? (
-          <section className="card placeholder" role="status" aria-live="polite">
-            <p className="muted">Loading sources and knowledge...</p>
-          </section>
-        ) : projectDataError ? (
-          <section className="card placeholder" role="alert">
-            <p className="muted">{projectDataError}</p>
-          </section>
-        ) : (
-          <>
-            <StatTiles
-              sources={sources.length}
-              decisions={countKind(knowledgeItems, "decision")}
-              tasks={countKind(knowledgeItems, "task")}
-              blockers={countKind(knowledgeItems, "blocker")}
-              unresolved={countKind(knowledgeItems, "unresolved")}
-            />
-            <div className="grid-2a" style={{ marginTop: 16 }}>
-              <section className="card">
-                <div className="card-head">
-                  <div>
-                    <h3 className="card-title">Knowledge status</h3>
-                    <p className="muted">Evidence and review states are shown separately.</p>
-                  </div>
-                </div>
-                <ul className="rows">
-                  <li className="row-item"><span className="row-text">Total findings</span><strong>{metrics.total}</strong></li>
-                  <li className="row-item"><span className="row-text">Evidence verified</span><strong>{metrics.verified}</strong></li>
-                  <li className="row-item"><span className="row-text">Needs verification</span><strong>{metrics.needsVerification}</strong></li>
-                  <li className="row-item"><span className="row-text">Contradictions</span><strong>{metrics.conflicting}</strong></li>
-                </ul>
-              </section>
-              <section className="card">
-                <div className="card-head">
-                  <div>
-                    <h3 className="card-title">Current model</h3>
-                    <p className="muted">Reported by the existing system status endpoint.</p>
-                  </div>
-                </div>
-                {llmStatus ? (
-                  <ul className="rows">
-                    <li className="row-item"><span className="row-text">Provider</span><strong>{llmStatus.provider || "Unknown"}</strong></li>
-                    <li className="row-item"><span className="row-text">Model</span><strong>{llmStatus.model || llmStatus.ollama_model || "Not selected"}</strong></li>
-                  </ul>
-                ) : (
-                  <p className="muted">{llmStatusError || "Model status is unavailable."}</p>
-                )}
-              </section>
-            </div>
-          </>
-        )}
-      </section>
-
-      <section id="sources" className="card section-card" aria-labelledby="sources-title">
-        <div className="card-head">
-          <div>
-            <h2 id="sources-title" className="card-title">Sources</h2>
-            <p className="muted">Existing project sources used by reconstruction.</p>
-          </div>
-          <Link href="/sources" className="link-btn">Manage sources <ArrowRight size={16} aria-hidden="true" /></Link>
-        </div>
-        {sources.length === 0 ? (
-          <p className="muted">No sources are available for this project yet.</p>
-        ) : (
-          <ul className="section-list source-list">
-            {sources.map((source) => <SourceRow key={source.id} source={source} />)}
-          </ul>
-        )}
-      </section>
-
-      <section id="knowledge" className="card section-card" aria-labelledby="knowledge-title">
-        <div className="card-head">
-          <div>
-            <h2 id="knowledge-title" className="card-title">Knowledge</h2>
-            <p className="muted">Extracted items with their current evidence and human-review states.</p>
-          </div>
-        </div>
-        {knowledgeItems.length === 0 ? (
-          <p className="muted">No findings yet. Run reconstruction after sources are available.</p>
-        ) : (
-          <ul className="section-list knowledge-list">
-            {knowledgeItems.map((item) => <KnowledgeRow key={item.id} item={item} />)}
-          </ul>
-        )}
-      </section>
-
-      <section id="reconstruction" className="card section-card" aria-labelledby="reconstruction-title">
-        <div className="card-head">
-          <div>
-            <h2 id="reconstruction-title" className="card-title">Reconstruction</h2>
-            <p className="muted">Use the existing synchronous reconstruction workflow.</p>
-          </div>
-          <Link href="/intelligence/reconstruct" className="action-btn">
-            Run reconstruction <ArrowRight size={16} aria-hidden="true" />
-          </Link>
-        </div>
-        <p className="muted">
-          The current API processes the project’s existing sources and reports a completed result or an error. This workspace does not claim progress tracking, cancellation, background runs, or run history.
-        </p>
-      </section>
-
-      <section id="handover" className="card section-card" aria-labelledby="handover-title">
-        <div className="card-head">
-          <div>
-            <h2 id="handover-title" className="card-title">Handover</h2>
-            <p className="muted">Continue with the existing handover draft and approval workflow.</p>
-          </div>
-          <Link href="/handovers/create" className="action-btn">
-            Open handover workflow <ArrowRight size={16} aria-hidden="true" />
-          </Link>
-        </div>
-        <p className="muted">
-          Handover generation remains separate from this read-only Intelligence overview and continues to use the existing project workflow.
-        </p>
-      </section>
-
-      <section className="card section-card" aria-labelledby="future-title">
-        <div className="card-head">
-          <div>
-            <h2 id="future-title" className="card-title">Future Intelligence capabilities</h2>
-            <p className="muted">These capabilities need backend contracts and persistence before they can be enabled.</p>
-          </div>
-        </div>
-        <ul className="section-list knowledge-list">
-          <CapabilityCard icon={ShieldAlert} title="Individual finding review" description="Approve, correct, reject, or request clarification for one finding." />
-          <CapabilityCard icon={History} title="Persistent reconstruction runs" description="Run history, progress, cancellation, and retry state are not available yet." />
-          <CapabilityCard icon={TriangleAlert} title="Contradiction management" description="Contradiction details and resolution actions are not exposed by the current API." />
-          <CapabilityCard icon={MessageSquareText} title="Contextual AI chat" description="Project-aware chat and citation-backed answers are not implemented yet." />
-        </ul>
-      </section>
-
-      <p className="muted" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <FolderKanban size={16} aria-hidden="true" />
-        Project context comes from the existing Topbar selection. No project IDs or mock results are hardcoded.
-      </p>
-    </div>
-  );
+  if (loading) return <section className="card placeholder"><h1 className="card-title">Loading Intelligence workspace...</h1></section>; if (error) return <section className="card placeholder" role="alert"><h1 className="card-title">Unable to load Intelligence workspace</h1><p className="muted">{error}</p></section>; if (!project) return <section className="card placeholder"><h1 className="card-title">Select a project</h1><p className="muted">Choose a project in the Topbar before opening Intelligence.</p><Link href="/projects" className="action-btn">Choose project</Link></section>;
+  return <div style={{ display: "grid", gap: 16 }}>
+    <section className="card section-card"><div className="card-head"><div><p className="eyebrow">Project Intelligence</p><h1 className="card-title">{project.name}</h1><p className="muted">Evidence, review, reconstruction and project-aware conversation.</p></div><Link href="/handovers/create" className="action-btn">Prepare handover <ArrowRight size={16} /></Link></div><nav className="settings-tabs" aria-label="Intelligence sections"><a className="tab-btn tab-active" href="#overview">Overview</a><a className="tab-btn" href="#sources">Sources</a><a className="tab-btn" href="#findings">Findings</a><a className="tab-btn" href="#chat">Chat</a><a className="tab-btn" href="#handover">Handover</a></nav></section>
+    {dataError && <p className="auth-error" role="alert">{dataError}</p>}
+    <section id="overview" className="card section-card"><div className="card-head"><div><h2 className="card-title">Overview</h2><p className="muted">Current persisted project state. Evidence verification is not human approval.</p></div></div><div className="stats"><div className="stat"><strong>{sources.length}</strong><span>Sources</span></div><div className="stat"><strong>{findings.length}</strong><span>Findings</span></div><div className="stat"><strong>{approved}</strong><span>Approved</span></div><div className="stat"><strong>{awaitingReview}</strong><span>Awaiting review</span></div><div className="stat"><strong>{contradictions}</strong><span>Contradictions</span></div></div><ul className="rows" style={{ marginTop: 16 }}><li className="row-item"><span className="row-text">Rejected findings</span><strong>{rejected}</strong></li><li className="row-item"><span className="row-text">Handover readiness</span><strong>{ready ? "Ready" : "Pending review or resolution"}</strong></li><li className="row-item"><span className="row-text">Current provider/model</span><strong>{llm ? `${llm.provider || "Unknown"} / ${llm.model || llm.ollama_model || "Not selected"}` : "Unavailable"}</strong></li><li className="row-item"><span className="row-text">Latest handover</span><strong>{handover ? label(handover.status) : "None reported"}</strong></li></ul></section>
+    <section id="sources" className="card section-card"><div className="card-head"><div><h2 className="card-title">Sources</h2><p className="muted">Select the existing project sources to include in a reconstruction run.</p></div><Link href="/sources" className="link-btn">Manage sources <ArrowRight size={16} /></Link></div>{dataLoading ? <p className="muted">Loading sources...</p> : sources.length === 0 ? <p className="muted">No sources are available.</p> : <><div style={{ display: "flex", gap: 8, marginBottom: 12 }}><button className="link-btn" type="button" onClick={() => setSelectedSourceIds(new Set(sources.map((source) => source.id)))}>Select all</button><button className="link-btn" type="button" onClick={() => setSelectedSourceIds(new Set())}>Clear</button><span className="muted">{selectedSourceIds.size} selected</span></div><ul className="section-list source-list">{sources.map((source) => <li className="source-card" key={source.id}><input type="checkbox" checked={selectedSourceIds.has(source.id)} onChange={() => toggleSource(source.id)} aria-label={`Select ${source.name}`} /><FileText size={19} /><div className="row-text"><p className="row-title">{source.name}</p><p className="muted">{source.type}{source.sourceIdentifier ? ` · ${source.sourceIdentifier}` : ""}</p></div><Link href="/sources" className="source-view-button">View sources</Link></li>)}</ul></>}</section>
+    <section id="reconstruction" className="card section-card"><div className="card-head"><div><h2 className="card-title">Reconstruction</h2><p className="muted">Synchronous run using selected source IDs. Duplicate submissions are guarded in this view and the backend accepts an idempotency key.</p></div><button className="auth-button" type="button" onClick={runReconstruction} disabled={running || selectedSourceIds.size === 0}>{running ? "Reconstructing..." : <><Sparkles size={16} /> Run reconstruction</>}</button></div>{selectedSourceIds.size === 0 && <p className="muted">Select at least one source first.</p>}{runError && <p className="auth-error" role="alert">{runError}</p>}{run && <div style={{ marginTop: 12 }}><span className={statusClass(run.status)}>Run {label(run.status)}</span><p className="muted">Run ID: {run.run_id}</p>{run.result_counts && <ul className="rows">{Object.entries(run.result_counts).map(([key, value]) => <li className="row-item" key={key}><span className="row-text">{label(key)}</span><strong>{value}</strong></li>)}</ul>}</div>}<p className="muted" style={{ marginTop: 12 }}>Legacy route remains available for compatibility: <Link href="/intelligence/reconstruct" className="link-btn">open legacy route</Link></p></section>
+    <section id="findings" className="card section-card"><div className="card-head"><div><h2 className="card-title">Findings</h2><p className="muted">Review evidence, contradictions and human-review state by category.</p></div><button type="button" className="link-btn" onClick={refreshFindings}><RefreshCw size={16} /> Refresh</button></div>{findings.length === 0 ? <p className="muted">No findings are available. Run reconstruction after selecting sources.</p> : Object.entries(groups).map(([category, items]) => <div key={category} style={{ marginTop: 16 }}><h3>{label(category)}</h3><ul className="section-list knowledge-list">{items.map((finding) => <li className="knowledge-card" key={finding.id}><span className="row-icon tone-pending"><TriangleAlert size={18} /></span><div className="row-text"><p className="row-title">{finding.title}</p><p className="muted knowledge-summary">{finding.content}</p><p className="knowledge-kind">{finding.evidence.length} evidence · {finding.contradictions.length} contradiction{finding.contradictions.length === 1 ? "" : "s"} · confidence {finding.confidence == null ? "not reported" : `${Math.round(finding.confidence * 100)}%`}</p></div><span className={statusClass(finding.review_status)}>{label(finding.review_status)}</span><button type="button" className="link-btn" onClick={() => openFinding(finding)}>Inspect</button></li>)}</ul></div>)}{selectedFinding && <FindingDetail finding={selectedFinding} onClose={() => setSelectedFinding(null)} onReviewed={(updated) => { updateFinding(updated); refreshFindings(); }} />}</section>
+    <section id="chat" className="card section-card"><div className="card-head"><div><h2 className="card-title"><MessageSquareText size={20} /> Contextual chat</h2><p className="muted">Answers are bounded by project context and include backend-returned citations.</p></div></div><div style={{ maxHeight: 420, overflowY: "auto" }} aria-live="polite">{chatMessages.length === 0 ? <p className="muted">No messages yet.</p> : chatMessages.map((message, index) => <div key={`${message.role}-${index}`} style={{ margin: "10px 0", padding: 12, border: "1px solid var(--border)", borderRadius: 8 }}><strong>{message.role === "user" ? "You" : "Intelligence"}</strong><p style={{ whiteSpace: "pre-wrap" }}>{message.content}</p>{message.support && <p className="muted">Support: {label(message.support)}</p>}{message.citations && message.citations.length > 0 && <p className="muted">Citations: {message.citations.join(", ")}</p>}</div>)}</div><form onSubmit={sendChat} style={{ display: "flex", gap: 8, marginTop: 12 }}><input value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ask about this project" aria-label="Project question" style={{ flex: 1 }} disabled={chatBusy} /><button type="submit" className="auth-button" disabled={chatBusy || !chatInput.trim()}>{chatBusy ? "Thinking..." : "Send"}</button></form>{chatError && <p className="auth-error" role="alert">{chatError}</p>}<p className="muted">Conversation state is held in this page session; credentials and messages are not stored in browser storage.</p></section>
+    <section id="handover" className="card section-card"><div className="card-head"><div><h2 className="card-title">Handover</h2><p className="muted">Use the existing handover creation and review workflow.</p></div><Link href="/handovers/create" className="action-btn">Open workflow <ArrowRight size={16} /></Link></div><p>{ready ? <><CheckCircle2 size={16} /> Approved findings are ready for the existing handover flow.</> : <><TriangleAlert size={16} /> Handover readiness is pending review, rejection or contradiction resolution.</>}</p><p className="muted">This workspace does not create or approve handovers.</p></section>
+  </div>;
 }

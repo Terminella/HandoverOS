@@ -58,6 +58,13 @@ def create_handover(
         select(KnowledgeItem).where(
             KnowledgeItem.project_id == project_id,
             KnowledgeItem.status == "verified",
+            (
+                (KnowledgeItem.review_status == "approved")
+                | (
+                    (KnowledgeItem.review_status == "unreviewed")
+                    & (KnowledgeItem.reviewed.is_(True))
+                )
+            ),
         )
     ).all()
 
