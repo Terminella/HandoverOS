@@ -8,9 +8,15 @@ from data_engineering.schemas.source_schema import SourceRecord
 
 
 class DocumentConnector(BaseConnector):
+    """Loads documents and preserves their extraction provenance."""
 
     def __init__(self):
         self.extractor = DocumentExtractor()
+
+    @staticmethod
+    def _calculate_sha256(content: bytes) -> str:
+        """Generate a SHA-256 fingerprint for supplied bytes."""
+        return hashlib.sha256(content).hexdigest()
 
     def load(self, source_data: Any) -> list[SourceRecord]:
         """
@@ -22,7 +28,6 @@ class DocumentConnector(BaseConnector):
             "file_paths": ["documents/notes.pdf"]
         }
         """
-
         if not isinstance(source_data, dict):
             raise TypeError("Source data must be a dictionary.")
 
@@ -38,16 +43,43 @@ class DocumentConnector(BaseConnector):
         records = []
 
         for file_path in file_paths:
+            path = Path(file_path)
 
-            extracted = self.extractor.extract(file_path)
+            extracted = self.extractor.extract(str(path))
 
             content = extracted["content"]
 
-            content_hash = hashlib.sha256(
-                content.encode("utf-8")
-            ).hexdigest()
+            # Fingerprint the original file bytes.
+            file_hash = self._calculate_sha256(
+                path.read_bytes()
+            )
 
-            path = Path(file_path)
+            # Preserve the existing extracted-content hash behaviour.
+            content_hash = self._calculate_sha256(
+                content.encode("utf-8")
+            )
+
+            metadata = {
+                "file_type": extracted["file_type"],
+                "character_count": extracted["character_count"],
+                "file_name": path.name,
+
+                # Original document fingerprint.
+                "file_sha256": file_hash,
+
+                # Fingerprint of the extracted text.
+                "content_sha256": content_hash,
+
+                # Extraction structure for evidence provenance.
+                "pages": extracted.get("pages", []),
+                "sections": extracted.get("sections", []),
+
+                "extraction_metadata": extracted.get(
+                    "metadata", {}
+                ),
+
+                "provenance_schema_version": "1.0",
+            }
 
             record = SourceRecord(
                 project_id=project_id,
@@ -57,11 +89,7 @@ class DocumentConnector(BaseConnector):
                 title=path.stem,
                 content=content,
                 content_hash=content_hash,
-                metadata={
-                    "file_type": extracted["file_type"],
-                    "character_count": extracted["character_count"],
-                    "file_name": path.name,
-                }
+                metadata=metadata,
             )
 
             records.append(record)

@@ -1,5 +1,10 @@
 import pytest
 
+
+import hashlib
+
+from data_engineering.connectors.document_connector import DocumentConnector
+
 from data_engineering.ingestion_pipeline import IngestionPipeline
 from data_engineering.connectors.base_connector import BaseConnector
 from data_engineering.connectors.synthetic_repository_loader import (
@@ -55,3 +60,42 @@ def test_pipeline_preserves_synthetic_metadata():
         record.metadata.get("is_synthetic") is True
         for record in records
     )
+
+
+def test_document_pipeline_preserves_hashes_and_adds_normalized_hash(
+    tmp_path,
+):
+    file_path = tmp_path / "sample.txt"
+    file_path.write_text("  Alpha   beta  ", encoding="utf-8")
+
+    pipeline = IngestionPipeline(
+        connector=DocumentConnector()
+    )
+
+    records = pipeline.run({
+        "project_id": "TASKFLOW-001",
+        "file_paths": [str(file_path)],
+    })
+
+    record = records[0]
+
+    expected_normalized_hash = hashlib.sha256(
+        record.content.encode("utf-8")
+    ).hexdigest()
+
+    assert record.content == "Alpha beta"
+
+    # Existing identifiers must remain unchanged.
+    assert record.source_id == record.content_hash
+
+    # Original extracted-content fingerprint is preserved.
+    assert record.metadata["content_sha256"] == record.content_hash
+
+    # New normalized fingerprint must match normalized content.
+    assert (
+        record.metadata["normalized_content_sha256"]
+        == expected_normalized_hash
+    )
+
+    # Original file fingerprint must still exist.
+    assert record.metadata["file_sha256"]
