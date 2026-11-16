@@ -1,3 +1,4 @@
+import hashlib
 from typing import Any
 
 from data_engineering.generators.repository_generator import RepositoryGenerator
@@ -35,6 +36,13 @@ class IngestionPipeline:
 
         self.normalizer = TextNormalizer()
 
+    @staticmethod
+    def _calculate_sha256(content: str) -> str:
+        """Calculate SHA-256 for normalized text."""
+        return hashlib.sha256(
+            content.encode("utf-8")
+        ).hexdigest()
+
     def run(self, source_data: Any = None):
         """
         Execute the complete data ingestion pipeline.
@@ -66,14 +74,27 @@ class IngestionPipeline:
 
             record_data = record.model_dump()
 
-            record_data["content"] = self.normalizer.normalize_text(
+            normalized_content = self.normalizer.normalize_text(
                 record_data["content"]
             )
+
+            record_data["content"] = normalized_content
 
             if record_data.get("title"):
                 record_data["title"] = self.normalizer.normalize_text(
                     record_data["title"]
                 )
+
+            # Preserve existing metadata and add document provenance.
+            if record_data.get("source_type") == "document":
+
+                metadata = dict(record_data.get("metadata") or {})
+
+                metadata["normalized_content_sha256"] = (
+                    self._calculate_sha256(normalized_content)
+                )
+
+                record_data["metadata"] = metadata
 
             normalized_records.append(record_data)
 
