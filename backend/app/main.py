@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, projects, users, sources, knowledge, handovers, system
+from app.api import auth, projects, users, sources, knowledge, handovers, system, intelligence
 
 from app.core.config import settings
 
@@ -71,6 +71,11 @@ app.include_router(
 
 app.include_router(
     system.router,
+    prefix=settings.API_PREFIX
+)
+
+app.include_router(
+    intelligence.router,
     prefix=settings.API_PREFIX
 )
 
