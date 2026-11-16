@@ -9,6 +9,11 @@ export type ItemKind =
   | "architecture"
   | "issue"
   | "other";
+export type IntelligenceReviewStatus =
+  | "unreviewed"
+  | "approved"
+  | "rejected"
+  | "clarification_required";
 export type ItemStatus =
   | "verified"
   | "needs_verification"
@@ -31,6 +36,7 @@ export interface Source {
   id: string;
   name: string;
   type: SourceType;
+  sourceIdentifier?: string;
 }
 
 export interface KnowledgeItem {
@@ -141,6 +147,91 @@ export interface ReconstructionResult {
   message: string;
 }
 
+export interface IntelligenceRun {
+  run_id: string;
+  project_id: string;
+  status: "pending" | "running" | "completed" | "failed" | string;
+  selected_source_count: number;
+  result_counts: {
+    claims_extracted: number;
+    claims_verified: number;
+    claims_unsupported: number;
+    contradictions: number;
+    knowledge_items_created: number;
+  } | null;
+  error: { code: string; message: string } | null;
+  provider: string | null;
+  model: string | null;
+  idempotency_key: string | null;
+  created_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface IntelligenceEvidence {
+  id: string;
+  source_id: string;
+  source_name: string | null;
+  source_identifier: string | null;
+  quote: string;
+}
+
+export interface IntelligenceContradiction {
+  id: string;
+  claim_ids: string[];
+  source_ids: string[];
+  explanation: string;
+  requires_human_review: boolean;
+}
+
+export interface FindingReviewHistory {
+  id: string;
+  reviewer_id: string;
+  action: string;
+  previous_status: string;
+  new_status: string;
+  previous_version: number;
+  new_version: number;
+  reviewer_note: string | null;
+  corrected_content: string | null;
+  created_at: string;
+}
+
+export interface IntelligenceFinding {
+  id: string;
+  project_id: string;
+  run_id: string | null;
+  claim_id: string | null;
+  category: string;
+  title: string;
+  content: string;
+  confidence: number | null;
+  verification_status: string;
+  review_status: IntelligenceReviewStatus | string;
+  reviewed: boolean;
+  version: number;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+  evidence: IntelligenceEvidence[];
+  contradictions: IntelligenceContradiction[];
+  review_history?: FindingReviewHistory[];
+}
+
+export type FindingReviewAction = "approve" | "reject" | "correct" | "request_clarification";
+
+export interface IntelligenceChatResponse {
+  conversation_id: string;
+  message_id: string;
+  answer: string;
+  citations: string[];
+  support: "evidence_backed" | "inference" | "insufficient_evidence" | string;
+  context_version: string | null;
+  provider: string | null;
+  model: string | null;
+}
+
 export interface OllamaModel {
   name: string;
   size: number | null;
@@ -223,6 +314,7 @@ export function mapBackendSource(source: BackendSource): Source {
     id: source.id,
     name: source.name,
     type: (source.type as SourceType) || "document",
+    sourceIdentifier: source.source_id,
   };
 }
 

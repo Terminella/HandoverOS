@@ -1,4 +1,11 @@
 
+import type {
+  FindingReviewAction,
+  IntelligenceChatResponse,
+  IntelligenceFinding,
+  IntelligenceRun,
+} from "./types";
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
 
@@ -199,7 +206,9 @@ async function apiCall<T>(
         console.error(`Server error ${response.status} for ${endpoint}`);
       }
       const exposesSafeDetail =
-        endpoint.startsWith("/knowledge/") || endpoint.startsWith("/system/llm/");
+        endpoint.startsWith("/knowledge/") ||
+        endpoint.startsWith("/system/llm/") ||
+        endpoint.startsWith("/intelligence/");
       throw new Error(
         exposesSafeDetail && message !== "Request failed."
           ? message
@@ -246,6 +255,77 @@ export function getSystemHealth(token?: string): Promise<{ status: string }> {
 
 export function getLlmStatus(token?: string): Promise<LlmStatus> {
   return apiRequest<LlmStatus>("/system/llm/status", token);
+}
+
+export function createIntelligenceRun(
+  projectId: string,
+  sourceIds: string[],
+  idempotencyKey: string,
+  token?: string,
+): Promise<IntelligenceRun> {
+  return apiPost<IntelligenceRun>(
+    `/intelligence/projects/${encodeURIComponent(projectId)}/runs`,
+    { source_ids: sourceIds, idempotency_key: idempotencyKey },
+    token,
+  );
+}
+
+export function getIntelligenceRun(runId: string, token?: string): Promise<IntelligenceRun> {
+  return apiRequest<IntelligenceRun>(`/intelligence/runs/${encodeURIComponent(runId)}`, token);
+}
+
+export function getIntelligenceFindings(
+  projectId: string,
+  token?: string,
+): Promise<IntelligenceFinding[]> {
+  return apiRequest<IntelligenceFinding[]>(
+    `/intelligence/projects/${encodeURIComponent(projectId)}/findings`,
+    token,
+  );
+}
+
+export function getIntelligenceFinding(
+  findingId: string,
+  token?: string,
+): Promise<IntelligenceFinding> {
+  return apiRequest<IntelligenceFinding>(
+    `/intelligence/findings/${encodeURIComponent(findingId)}`,
+    token,
+  );
+}
+
+export function reviewIntelligenceFinding(
+  findingId: string,
+  payload: {
+    action: FindingReviewAction;
+    reviewer_note?: string | null;
+    corrected_content?: string | null;
+    expected_version: number;
+  },
+  token?: string,
+): Promise<IntelligenceFinding> {
+  return apiPost<IntelligenceFinding>(
+    `/intelligence/findings/${encodeURIComponent(findingId)}/review`,
+    payload,
+    token,
+  );
+}
+
+export function sendIntelligenceChat(
+  projectId: string,
+  payload: {
+    message: string;
+    conversation_id?: string | null;
+    source_ids?: string[] | null;
+    run_id?: string | null;
+  },
+  token?: string,
+): Promise<IntelligenceChatResponse> {
+  return apiPost<IntelligenceChatResponse>(
+    `/intelligence/projects/${encodeURIComponent(projectId)}/chat`,
+    payload,
+    token,
+  );
 }
 
 export function discoverOllamaModels(token?: string): Promise<{ models: OllamaModel[]; count: number }> {
