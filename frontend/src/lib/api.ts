@@ -2,6 +2,86 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
 
+export type ExecutionMode = "local" | "cloud";
+
+export type ProviderType =
+  | "ollama"
+  | "openai"
+  | "openrouter"
+  | "gemini"
+  | "xai"
+  | "anthropic"
+  | "custom";
+
+export type ConfigurationScope = "environment" | "user" | "project" | "unknown";
+export type CredentialState = "not_configured" | "configured" | "replacement_pending";
+export type ConnectionState = "not_tested" | "testing" | "connected" | "unavailable" | "error";
+
+export type CredentialOperation =
+  | { kind: "unchanged" }
+  | { kind: "replace"; value: string }
+  | { kind: "remove" };
+
+export type ModelCapability =
+  | "chat"
+  | "structured_output"
+  | "vision"
+  | "tools"
+  | "thinking"
+  | (string & {});
+
+export type ModelDescriptor = {
+  id: string;
+  display_name?: string;
+  capabilities?: ModelCapability[];
+  size?: number | null;
+  family?: string | null;
+  parameter_size?: string | null;
+  quantization?: string | null;
+};
+
+export type AIConfigurationSummary = {
+  configuration_id: string;
+  provider_type: ProviderType;
+  execution_mode: ExecutionMode;
+  display_name: string;
+  base_url: string | null;
+  model_id: string | null;
+  capabilities: ModelCapability[];
+  active: boolean;
+  connection_status: ConnectionState;
+  credential_state: CredentialState;
+  scope?: ConfigurationScope;
+};
+
+export type AIConfigurationDraft = {
+  configuration_id?: string;
+  provider_type: ProviderType;
+  execution_mode: ExecutionMode;
+  base_url: string;
+  model_id: string;
+  credential: CredentialOperation;
+};
+
+export type OllamaModel = {
+  name: string;
+  size: number | null;
+  digest: string | null;
+  modified_at: string | null;
+  parameter_size: string | null;
+  quantization: string | null;
+  family: string | null;
+};
+
+export type LlmStatus = {
+  provider: string;
+  model: string | null;
+  ollama_base_url: string;
+  ollama_model: string | null;
+  model_selection_mode: string;
+  is_ollama_provider: boolean;
+};
+
 function getStoredToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
@@ -158,6 +238,42 @@ export function apiDelete<T>(
   token?: string
 ): Promise<T> {
   return apiCall<T>(endpoint, "DELETE", undefined, token);
+}
+
+export function getSystemHealth(token?: string): Promise<{ status: string }> {
+  return apiRequest<{ status: string }>("/system/health", token);
+}
+
+export function getLlmStatus(token?: string): Promise<LlmStatus> {
+  return apiRequest<LlmStatus>("/system/llm/status", token);
+}
+
+export function discoverOllamaModels(token?: string): Promise<{ models: OllamaModel[]; count: number }> {
+  return apiRequest<{ models: OllamaModel[]; count: number }>("/system/llm/models", token);
+}
+
+export function testOllamaConnection(token?: string): Promise<{
+  status: string;
+  message: string;
+  models: string[];
+  count: number;
+  configured_model: string;
+  model_selection_mode: string;
+}> {
+  return apiPost("/system/llm/test", {}, token);
+}
+
+export function selectOllamaModel(model: string, token?: string): Promise<{ status: string; message: string; model: string }> {
+  return apiPost("/system/llm/select", { model }, token);
+}
+
+export function testOllamaCompatibility(token?: string): Promise<{
+  model: string;
+  status: string;
+  message: string;
+  claims_extracted: number;
+}> {
+  return apiPost("/system/llm/compatibility-test", {}, token);
 }
 
 export async function apiDownload(
