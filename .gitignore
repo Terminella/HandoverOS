@@ -34,3 +34,6 @@ backend/handoveros.db
 handoveros.db
 *.db-wal
 *.db-shm
+
+# Uploaded source documents (local data)
+backend/source_files/

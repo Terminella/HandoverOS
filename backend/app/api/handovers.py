@@ -10,12 +10,15 @@ from data_engineering.storage.database import get_db
 from app.core.authorization import require_project_role
 from data_engineering.storage.models import (
     Handover,
+    Project,
     ProjectMember,
     User,
     KnowledgeItem,
     HandoverItem,
     Approval,
     EvidenceLink,
+    Source,
+
 )
 from app.core.security import get_user_id_from_token
 from app.core.audit import record_audit
@@ -215,6 +218,105 @@ def get_authenticated_user(
         )
 
     return user_id
+
+@router.get("/{handover_id}/detail")
+def get_handover_detail(
+    handover_id: str,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db)
+):
+    user_id = get_authenticated_user(authorization, db)
+
+    handover = db.get(Handover, handover_id)
+
+    if not handover:
+        raise HTTPException(
+            status_code=404,
+            detail="Handover not found"
+        )
+
+    require_project_role(
+        db,
+        handover.project_id,
+        user_id,
+        ("owner", "editor", "viewer"),
+    )
+
+    project = db.get(Project, handover.project_id)
+    prepared_by = db.get(User, handover.created_by)
+
+    item_results = db.execute(
+        select(HandoverItem, KnowledgeItem, Source)
+        .outerjoin(
+            KnowledgeItem,
+            HandoverItem.knowledge_item_id == KnowledgeItem.id
+        )
+        .outerjoin(
+            Source,
+            HandoverItem.source_id == Source.id
+        )
+        .where(HandoverItem.handover_id == handover_id)
+        .order_by(HandoverItem.position.asc())
+    ).all()
+
+    items = []
+
+    for handover_item, knowledge_item, source in item_results:
+        items.append({
+            "id": handover_item.id,
+            "section": handover_item.section,
+            "content": handover_item.content,
+            "position": handover_item.position,
+            "knowledgeItem": {
+                "id": knowledge_item.id,
+                "title": knowledge_item.title,
+                "type": knowledge_item.item_type,
+                "confidence": knowledge_item.confidence,
+                "reviewed": knowledge_item.reviewed,
+            } if knowledge_item else None,
+            "evidence": {
+                "id": source.id,
+                "name": source.source_name,
+                "title": source.title,
+                "type": source.source_type,
+                "url": source.source_url,
+            } if source else None,
+        })
+
+    approval_results = db.execute(
+        select(Approval, User.name)
+        .join(User, Approval.reviewer_id == User.id)
+        .where(Approval.handover_id == handover_id)
+        .order_by(Approval.reviewed_at.desc())
+    ).all()
+
+    approvals = [
+        {
+            "reviewer": reviewer_name,
+            "status": approval.status,
+            "comments": approval.comments,
+            "reviewedAt": (
+                approval.reviewed_at.isoformat()
+                if approval.reviewed_at else None
+            ),
+        }
+        for approval, reviewer_name in approval_results
+    ]
+
+    return {
+        "id": handover.id,
+        "projectId": handover.project_id,
+        "projectName": project.name if project else None,
+        "version": f"v{handover.version}",
+        "status": handover.status,
+        "generatedAt": (
+            handover.created_at.isoformat()
+            if handover.created_at else None
+        ),
+        "preparedBy": prepared_by.name if prepared_by else "Unknown",
+        "items": items,
+        "approvals": approvals,
+    }
 
 
 @router.get("/{project_id}")
