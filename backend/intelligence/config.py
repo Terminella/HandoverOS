@@ -43,6 +43,11 @@ class IntelligenceConfig:
     request_timeout: float = 60.0
 
     def __post_init__(self):
+        provider = self.provider.strip().lower()
+        if not provider:
+            raise ValueError("LLM provider must not be empty")
+        object.__setattr__(self, "provider", provider)
+
         if self.max_input_characters < 1:
             raise ValueError("max_input_characters must be positive")
 
@@ -60,14 +65,6 @@ class IntelligenceConfig:
 
         if self.request_timeout <= 0:
             raise ValueError("request_timeout must be positive")
-
-        if self.provider not in {
-            "mock",
-            "ollama",
-        }:
-            raise ValueError(
-                f"Unsupported LLM provider: {self.provider}"
-            )
 
         if not self.ollama_base_url.startswith(
             ("http://", "https://")
